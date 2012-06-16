@@ -10,18 +10,19 @@ BROKER_REGISTRY = {
     'redis': RedisBroker,
 }
 
-def Broker(url, *queues):
+def Broker(url, *queues, **kw):
     """Create a new broker
 
     :param url: The broker URL (example: "memory://").
     :param *queues: One or more queue names on which to publish functions.
+    :param **kw: Keyword arguments to pass to the broker constructor.
     """
     data = urlparse(url)
     try:
         make_broker = BROKER_REGISTRY[data.scheme]
     except KeyError:
         raise ValueError('invalid broker URL: %s' % url)
-    return make_broker(data, *queues)
+    return make_broker(data, *queues, **kw)
 
 def Queue(url, name=DEFAULT):
     """Get a queue object for invoking remote tasks

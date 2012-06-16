@@ -9,11 +9,18 @@ TASKSET_PATTERN = 'pymq:taskset:%s'
 
 
 class RedisBroker(BaseBroker):
+    """Redis broker implementation
+
+    In addition to the normal broker arguments, `__init__` accepts a
+    `redis_factory` argument, which can be used to customize redis
+    connection instantiation.
+    """
 
     def __init__(self, *args, **kw):
+        redis_factory = kw.pop('redis_factory', redis.StrictRedis)
         super(RedisBroker, self).__init__(*args, **kw)
         db = int(self.path.lstrip('/'))
-        self.redis = redis.StrictRedis(self.host, self.port, db=db)
+        self.redis = redis_factory(self.host, self.port, db=db)
 
     def subscribe(self, queues):
         queue_names = [QUEUE_PATTERN % q for q in queues]
