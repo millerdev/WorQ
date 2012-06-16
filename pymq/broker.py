@@ -9,7 +9,9 @@ log = logging.getLogger(__name__)
 
 class BaseBroker(object):
 
-    def __init__(self, url):
+    default_result_timeout = 180
+
+    def __init__(self, url, *queues):
         self.url = url
         if ':' in url.netloc:
             host, port = url.netloc.rsplit(':', 1)
@@ -19,23 +21,41 @@ class BaseBroker(object):
             self.host = url.netloc
             self.port = None
         self.path = url.path
-        self.workers = {}
+        self.queues = list(queues) if queues else [DEFAULT]
+        self.tasks = {stop_task.name: stop_task}
 
-    def worker(self, *queues):
-        # TODO eliminate this method (add broker.publish)
-        if not queues:
-            queues = [DEFAULT]
-        worker = Worker(self, queues)
-        for queue in queues:
-            self.workers[queue] = worker
-        return worker
+    def publish(self, callable, name=None):
+        if name is None:
+            name = callable.__name__
+        if name in self.tasks:
+            raise ValueError(
+                'cannot publish two tasks with the same name: %s' % name)
+        log.debug('published: %s on %s', name, self.queues)
+        self.tasks[name] = callable
+
+    def start_worker(self):
+        try:
+            self.subscribe(self.queues)
+        except StopBroker:
+            log.info('broker stopped')
+
+    def stop(self):
+        """Stop a random worker to the queue.
+
+        WARNING this is only meant for testing purposes. It will likely not do
+        what you expect in an environment with more than one worker.
+        """
+        self.enqueue(self.queues[0], 'stop', stop_task.name, (), {}, {})
 
     def queue(self, queue=DEFAULT):
         return Queue(self, queue)
 
     def enqueue(self, queue, task_id, task_name, args, kw, options):
         blob = dumps((task_id, task_name, args, kw, options))
-        result = self.deferred_result(task_id)
+        if options.get('result_timeout') is not None:
+            result = self.deferred_result(task_id)
+        else:
+            result = None
         self.push_task(queue, blob)
         return result
 
@@ -45,27 +65,37 @@ class BaseBroker(object):
         except Exception:
             log.error('cannot load task blob: %s', blob, exc_info=True)
             return
-        if 'taskset' in options:
-            taskset_id = options['taskset'][0]
+        log.debug('task %s.%s [%s]', queue, task_name, task_id)
         try:
-            worker = self.workers[queue]
-        except KeyError:
-            log.error('cannot find worker for queue: %s', queue, exc_info=True)
-            return
-        try:
-            task = worker.tasks[task_name]
-        except KeyError:
-            log.error('no such task %r on queue %r',
-                task_name, queue, exc_info=True)
-            return
-        error = False
-        try:
-            result = task(*args, **kw)
-        except Exception, err:
-            log.error('task failed: %s -> %s', task_name, err, exc_info=True)
             error = True
-            result = str(err)
-        self.set_result_blob(task_id, dumps((error, result)))
+            result = None
+            try:
+                task = self.tasks[task_name]
+            except KeyError:
+                log.error('no such task %r in queue %r', task_name, queue)
+                return
+            try:
+                result = task(*args, **kw)
+                error = False
+            except Exception, err:
+                log.error('%r task failed:', task_name, exc_info=True)
+        finally:
+            if 'taskset' in options:
+                self.process_taskset(queue, options['taskset'], result)
+            else:
+                timeout = options.get('result_timeout')
+                if timeout is not None:
+                    log.debug('set %s [%s] -> %r', task_name, task_id, result)
+                    blob = dumps((error, result))
+                    self.set_result_blob(task_id, blob, timeout)
+
+    def process_taskset(self, queue, taskset, result):
+        taskset_id, task_name, args, kw, options, num = taskset
+        timeout = options.get('result_timeout', self.default_result_timeout)
+        results = self.update_results(taskset_id, num, dumps(result), timeout)
+        if results is not None:
+            args = ([loads(r) for r in results],) + args
+            self.enqueue(queue, taskset_id, task_name, args, kw, options)
 
     def deferred_result(self, task_id):
         return Result(self, task_id)
@@ -76,40 +106,33 @@ class BaseBroker(object):
             return None
         return loads(blob)
 
-    def subscribe(self, worker, queues):
+    def subscribe(self, queues):
         raise NotImplementedError('abstract method')
 
     def push_task(self, queue, blob):
         raise NotImplementedError('abstract method')
 
-    def set_result_blob(self, task_id, blob):
+    def set_result_blob(self, task_id, blob, timeout):
         raise NotImplementedError('abstract method')
 
     def pop_result_blob(self, task_id):
         raise NotImplementedError('abstract method')
 
+    def update_results(self, taskset_id, num_tasks, blob, timeout):
+        """Update the result set, returning all results if complete
 
-class Worker(object):
+        This operation is atomic, meaning that only one caller will ever be
+        returned a value other than None for a given `taskset_id`.
 
-    def __init__(self, broker, queues):
-        self._broker = weakref(broker)
-        self.queues = queues
-        self.tasks = {}
-
-    @property
-    def broker(self):
-        return self._broker()
-
-    def publish(self, callable, name=None):
-        if name is None:
-            name = callable.__name__
-        if name in self.tasks:
-            raise ValueError(
-                'cannot publish two tasks with the same name: %s' % name)
-        self.tasks[name] = callable
-
-    def start(self):
-        self.broker.subscribe(self, self.queues)
+        :param taskset_id: (string) The taskset unique identifier.
+        :param num_tasks: (int) Number of tasks in the set.
+        :param blob: (string) A serialized result object to add to the
+            list of results.
+        :param timeout: (int) Discard results after this number of seconds.
+        :returns: None if the number of updates has not reached num_tasks.
+            Otherwise return an unordered list of result blobs.
+        """
+        raise NotImplementedError('abstract method')
 
 
 class Queue(object):
@@ -146,8 +169,7 @@ class Result(object):
         self.task_id = task_id
         self._completed = False
 
-    @property
-    def completed(self):
+    def __nonzero__(self):
         if not self._completed:
             result = self.broker.pop_result(self.task_id)
             if result is None:
@@ -161,9 +183,9 @@ class Result(object):
         return True
 
     def __repr__(self):
-        if self.completed:
-            if self.error:
-                value = 'error: %s' % (self.value,)
+        if self:
+            if hasattr(self, 'error'):
+                value = 'error: %s' % (self.error,)
             else:
                 value = 'value=%r' % (self.value,)
         else:
@@ -173,13 +195,16 @@ class Result(object):
 
 class TaskSet(object):
 
-    def __init__(self):
+    def __init__(self, result_timeout=None):
         self.queue = None
         self.tasks = []
+        self.options = {}
+        if result_timeout is not None:
+            self.options['result_timeout'] = result_timeout
 
     def add(*self_task_args, **kw):
         if len(self_task_args) < 2:
-            raise ValueError('TaskSet.add expected at least two positional '
+            raise ValueError('expected at least two positional '
                 'arguments, got %s' % len(self_task_args))
         self = self_task_args[0]
         task = self_task_args[1]
@@ -191,29 +216,24 @@ class TaskSet(object):
         self.tasks.append((task, args, kw))
 
     def __call__(*self_task_args, **kw):
-        if len(self_task_args) < 1:
-            raise ValueError('TaskSet.__call__ expected at least one '
-                'positional argument, got %s' % len(self_task_args))
+        TaskSet.add(*self_task_args, **kw)
         self = self_task_args[0]
-        if len(self_task_args) > 1:
-            task = self_task_args[1]
-            args = self_task_args[2:]
-            if self.queue is None:
-                self.queue = (task.broker, task.queue)
-            elif self.queue != (task.broker, task.queue):
-                raise ValueError('cannot combine tasks from discrete queues')
-        else:
-            task = resultset
-            args = ()
-            if kw:
-                raise ValueError('unexected keyword arguments: %r' % (kw,))
+        task, args, kw = self.tasks.pop()
         broker, queue = self.queue
         num = len(self.tasks)
-        options = {'taskset': (uuid4().hex, task.name, args, kw, num)}
+        taskset_id = uuid4().hex
+        if self.options.get('result_timeout') is not None:
+            result = broker.deferred_result(taskset_id)
+        else:
+            result = None
+        options = {'taskset':
+            (taskset_id, task.name, args, kw, self.options, num)}
         for t, a, k in self.tasks:
             t.with_options(**options)(*a, **k)
-        return broker.deferred_result(options['taskset'][0])
+        return result
 
-def resultset(results):
-    return results
-resultset.name = '<resultset>'
+class StopBroker(BaseException): pass
+
+def stop_task():
+    raise StopBroker()
+stop_task.name = '<stop_task>'

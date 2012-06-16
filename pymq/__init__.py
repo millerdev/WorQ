@@ -5,15 +5,15 @@ from pymq.broker import TaskSet
 from pymq.memory import MemoryBroker
 from pymq.redis import RedisBroker
 
-BROKERS = {
+BROKER_REGISTRY = {
     'memory': MemoryBroker.factory,
     'redis': RedisBroker,
 }
 
-def Broker(url):
+def Broker(url, *queues):
     data = urlparse(url)
     try:
-        broker_factory = BROKERS[data.scheme]
+        make_broker = BROKER_REGISTRY[data.scheme]
     except KeyError:
         raise ValueError('invalid broker URL: %s' % url)
-    return broker_factory(data)
+    return make_broker(data, *queues)
