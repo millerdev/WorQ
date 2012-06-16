@@ -18,7 +18,6 @@ class MemoryBroker(BaseBroker):
         super(MemoryBroker, self).__init__(*args, **kw)
         self.taskresults = WeakValueDictionary()
         self.results = WeakKeyDictionary()
-        self.taskset_results = {}
 
     def subscribe(self, queues):
         pass
@@ -43,7 +42,12 @@ class MemoryBroker(BaseBroker):
 
     def update_results(self, taskset_id, num, blob, timeout):
         # not thread-safe
-        value = self.taskset_results.setdefault(taskset_id, [])
+        result = self.deferred_result(taskset_id)
+        key = getattr(result, 'taskset_results_key', None)
+        if key is None:
+            key = type('TaskSet-%s' % taskset_id, (object,), {})
+            result.taskset_results_key = key
+        value = self.results.setdefault(key, [])
         value.append(blob)
         if len(value) == num:
-            return self.taskset_results.pop(taskset_id)
+            return self.results.pop(key)

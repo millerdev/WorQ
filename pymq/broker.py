@@ -167,14 +167,14 @@ class Result(object):
     def __init__(self, broker, task_id):
         self.broker = broker
         self.task_id = task_id
-        self._completed = False
+        self.completed = False
 
     def __nonzero__(self):
-        if not self._completed:
+        if not self.completed:
             result = self.broker.pop_result(self.task_id)
             if result is None:
                 return False
-            self._completed = True
+            self.completed = True
             error, value = result
             if error:
                 self.error = value
