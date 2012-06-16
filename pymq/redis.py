@@ -1,6 +1,6 @@
 from __future__ import absolute_import
 import redis
-from pymq.broker import BaseBroker
+from pymq.core import BaseBroker
 
 QUEUE_PATTERN = 'pymq:queue:%s'
 RESULT_PATTERN = 'pymq:result:%s'
