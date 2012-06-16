@@ -98,7 +98,7 @@ class BaseBroker(object):
             self.enqueue(queue, taskset_id, task_name, args, kw, options)
 
     def deferred_result(self, task_id):
-        return Result(self, task_id)
+        return DeferredResult(self, task_id)
 
     def pop_result(self, task_id):
         blob = self.pop_result_blob(task_id)
@@ -162,7 +162,16 @@ class Task(object):
         return Task(self.broker, self.queue, self.name, options)
 
 
-class Result(object):
+class DeferredResult(object):
+    """Deferred result object
+
+    Meaningful attributes:
+    - value: The result value. This is set when evaluating the boolean value of
+        the DeferredResult object after the task returns successfully.
+    - completed: A boolean value denoting if the task has completed. Retrieving
+        this value will NOT retrieve the value from the broker if it has not
+        yet arrived.
+    """
 
     def __init__(self, broker, task_id):
         self.broker = broker
@@ -170,6 +179,7 @@ class Result(object):
         self.completed = False
 
     def __nonzero__(self):
+        """Return True if the result has arrived, otherwise False."""
         if not self.completed:
             result = self.broker.pop_result(self.task_id)
             if result is None:
@@ -185,15 +195,39 @@ class Result(object):
     def __repr__(self):
         if self:
             if hasattr(self, 'error'):
-                value = 'error: %s' % (self.error,)
+                value = 'task failed'
             else:
                 value = 'value=%r' % (self.value,)
         else:
             value = 'incomplete'
-        return '<Result id=%s %s>' % (self.task_id, value)
+        return '<DeferredResult %s>' % (value,)
 
 
 class TaskSet(object):
+    """Execute a set of tasks in parallel, process results in a final task.
+
+    :param result_timeout: Number of seconds to persist the final result. This
+        timeout value is also used to retain intermediate task results. It
+        should be longer than the longest-running task in the set. The default
+        is None, which means the final result will be ignored; the default
+        timeout for intermediate tasks is 3 minutes (180 seconds) in that case.
+
+    Usage:
+        >>> t = TaskSet(result_timeout=60)
+        >>> for arg in [0, 1, 2, 3]:
+        ...     t.add(q.plus_ten, arg)
+        ...
+        >>> t(q.sum)
+        <DeferredResult value=46>
+
+    TaskSet algorithm:
+    - Head tasks (added with .add) are queued to be executed in parallel.
+    - Upon completion of each head task the results are checked to determine
+      if all head tasks have completed. If so, pop the results from the
+      persistent store and enqueue the final task (passed to .__call__).
+      Otherwise set a timeout on the results so they are not persisted forever
+      if the taskset fails to complete for whatever reason.
+    """
 
     def __init__(self, result_timeout=None):
         self.queue = None
@@ -203,6 +237,12 @@ class TaskSet(object):
             self.options['result_timeout'] = result_timeout
 
     def add(*self_task_args, **kw):
+        """Add a task to the set
+
+        :params task: A task object.
+        :params *args: Positional arguments to use when invoking the task.
+        :params **kw: Keyword arguments to use when invoking the task.
+        """
         if len(self_task_args) < 2:
             raise ValueError('expected at least two positional '
                 'arguments, got %s' % len(self_task_args))
@@ -216,6 +256,15 @@ class TaskSet(object):
         self.tasks.append((task, args, kw))
 
     def __call__(*self_task_args, **kw):
+        """Invoke the taskset
+
+        :params task: The final task object, which will be invoked with a list
+            of results from all other tasks in the set as its first argument.
+        :params *args: Extra positional arguments to use when invoking the task.
+        :params **kw: Keyword arguments to use when invoking the task.
+        :returns: None if the TaskSet was created with `result_timeout=None`.
+            Otherwise, a DeferredResult object.
+        """
         TaskSet.add(*self_task_args, **kw)
         self = self_task_args[0]
         task, args, kw = self.tasks.pop()
@@ -231,6 +280,7 @@ class TaskSet(object):
         for t, a, k in self.tasks:
             t.with_options(**options)(*a, **k)
         return result
+
 
 class StopBroker(BaseException): pass
 

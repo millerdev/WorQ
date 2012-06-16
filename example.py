@@ -11,7 +11,6 @@ log = logging.getLogger(__name__)
 def simple(url, thread_worker):
     state = []
 
-    # -- tasks.py --
     def func(arg):
         state.append(arg)
 
@@ -19,7 +18,7 @@ def simple(url, thread_worker):
     broker.publish(func)
     with thread_worker(broker):
 
-        # -- task-invoking code --
+        # -- task-invoking code, usually invoked from another process --
         broker = Broker(url)
         default = broker.queue()
         res = default.func('arg')
@@ -30,7 +29,6 @@ def simple(url, thread_worker):
 
 def method_publishing(url, thread_worker):
 
-    # -- tasks.py --
     class Database(object):
         """stateful storage"""
         value = None
@@ -49,7 +47,7 @@ def method_publishing(url, thread_worker):
     broker.publish(obj.update_value)
     with thread_worker(broker):
 
-        # -- task-invoking code --
+        # -- task-invoking code, usually invoked from another process --
         broker = Broker(url)
         obj = broker.queue()
         res = obj.update_value(2)
@@ -59,24 +57,7 @@ def method_publishing(url, thread_worker):
 
 
 def taskset(url, thread_worker):
-    """ Task sets
 
-    - task is "pending" when it is in the queue.
-    - task is "failed" when it is popped from the queue before being executed.
-    - task changes from "failed" to "success" once executed successfully.
-    - final task in task set cannot be executed until all other tasks in set
-      have a result (either "failed" or "success").
-    - "failed" tasks always have a result of None.
-    - taskset algorithm:
-        - Head tasks are enqueued to be executed in parallel.
-        - Upon completion of each head task the results are checked to determine
-          if all tasks have completed. If yes (only one task will get a YES),
-          pop the results from the persistent store and enqueue the final task.
-          Otherwise set a timeout on the results so they are not persisted
-          forever if the taskset fails to complete for whatever reason.
-    """
-
-    # -- tasks.py --
     def func(arg):
         return arg
     def get_number(num):
@@ -87,7 +68,7 @@ def taskset(url, thread_worker):
     broker.publish(sum)
     with thread_worker(broker):
 
-        # -- task-invoking code --
+        # -- task-invoking code, usually invoked from another process --
         broker = Broker(url)
         q = broker.queue('not-the-default-queue')
         tasks = TaskSet(result_timeout=5)

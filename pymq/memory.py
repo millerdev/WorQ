@@ -1,4 +1,4 @@
-from pymq.core import BaseBroker, Result
+from pymq.core import BaseBroker
 from weakref import WeakValueDictionary, WeakKeyDictionary
 
 MEM_BROKERS = WeakValueDictionary()
