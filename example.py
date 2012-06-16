@@ -3,7 +3,7 @@ import logging
 import time
 from contextlib import contextmanager
 from threading import Thread
-from pymq import Broker, TaskSet
+from pymq import Broker, Queue, TaskSet
 
 log = logging.getLogger(__name__)
 
@@ -19,9 +19,8 @@ def simple(url, thread_worker):
     with thread_worker(broker):
 
         # -- task-invoking code, usually invoked from another process --
-        broker = Broker(url)
-        default = broker.queue()
-        res = default.func('arg')
+        q = Queue(url)
+        res = q.func('arg')
         eq_(res, None)
 
         eventually((lambda:state), ['arg'])
@@ -48,9 +47,8 @@ def method_publishing(url, thread_worker):
     with thread_worker(broker):
 
         # -- task-invoking code, usually invoked from another process --
-        broker = Broker(url)
-        obj = broker.queue()
-        res = obj.update_value(2)
+        q = Queue(url)
+        res = q.update_value(2)
         eq_(res, None)
 
         eventually((lambda:db.value), 2)
@@ -69,8 +67,7 @@ def taskset(url, thread_worker):
     with thread_worker(broker):
 
         # -- task-invoking code, usually invoked from another process --
-        broker = Broker(url)
-        q = broker.queue('not-the-default-queue')
+        q = Queue(url, 'not-the-default-queue')
         tasks = TaskSet(result_timeout=5)
         for n in [1, 2, 3]:
             tasks.add(q.get_number, n)
@@ -80,6 +77,8 @@ def taskset(url, thread_worker):
         assert res is not None
         eventually((lambda: res.value if res else None), 6)
 
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# testing helpers (probably not very meaningful example code)
 
 def test():
     url = 'memory://'

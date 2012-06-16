@@ -136,6 +136,7 @@ class BaseBroker(object):
 
 
 class Queue(object):
+    """Queue object for invoking remote tasks"""
 
     def __init__(self, broker, queue):
         self.__broker = broker
