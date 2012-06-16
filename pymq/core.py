@@ -95,7 +95,6 @@ class BaseBroker(object):
             else:
                 timeout = options.get('result_timeout')
                 if timeout is not None:
-                    log.debug('set %s [%s] -> %r', task_name, task_id, result)
                     message = dumps((error, result))
                     self.set_result_message(task_id, message, timeout)
 
