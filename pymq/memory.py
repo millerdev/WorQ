@@ -1,10 +1,10 @@
 """In-memory queue broker, normally used for testing."""
-from pymq.core import BaseBroker
+from pymq.core import AbstractBroker
 from weakref import WeakValueDictionary, WeakKeyDictionary
 
 MEM_BROKERS = WeakValueDictionary()
 
-class MemoryBroker(BaseBroker):
+class MemoryBroker(AbstractBroker):
     # this broker is not thread-safe
 
     @classmethod

@@ -7,7 +7,7 @@ from weakref import ref as weakref
 DEFAULT = 'default'
 log = logging.getLogger(__name__)
 
-class BaseBroker(object):
+class AbstractBroker(object):
 
     default_result_timeout = 180
 

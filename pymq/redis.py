@@ -1,14 +1,14 @@
 """Redis queue broker."""
 from __future__ import absolute_import
 import redis
-from pymq.core import BaseBroker
+from pymq.core import AbstractBroker
 
 QUEUE_PATTERN = 'pymq:queue:%s'
 RESULT_PATTERN = 'pymq:result:%s'
 TASKSET_PATTERN = 'pymq:taskset:%s'
 
 
-class RedisBroker(BaseBroker):
+class RedisBroker(AbstractBroker):
     """Redis broker implementation
 
     In addition to the normal broker arguments, `__init__` accepts a
