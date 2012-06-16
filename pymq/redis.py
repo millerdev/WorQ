@@ -13,7 +13,7 @@ class RedisBroker(BaseBroker):
     def __init__(self, *args, **kw):
         super(RedisBroker, self).__init__(*args, **kw)
         db = int(self.path.lstrip('/'))
-        self.redis = redis.Redis(self.host, self.port, db=db)
+        self.redis = redis.StrictRedis(self.host, self.port, db=db)
 
     def subscribe(self, queues):
         queue_names = [QUEUE_PATTERN % q for q in queues]
@@ -29,7 +29,7 @@ class RedisBroker(BaseBroker):
 
     def set_result_message(self, task_id, message, timeout):
         key = RESULT_PATTERN % task_id
-        self.redis.setex(key, message, timeout)
+        self.redis.setex(key, timeout, message)
 
     def pop_result_message(self, task_id):
         key = RESULT_PATTERN % task_id
