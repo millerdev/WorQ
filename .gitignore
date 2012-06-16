@@ -3,4 +3,5 @@
 .noseids
 /build
 /dist
+/temp
 

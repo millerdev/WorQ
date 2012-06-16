@@ -1,25 +1,28 @@
 # PyMQ examples
+from threading import Thread
 from pymq import Broker, TaskSet
 
-def simple(url):
+def simple(url, run):
     # -- tasks.py --
     def func(arg):
         return arg
 
     #if __name__ == '__main__':
-    cn = Broker(url)
-    w = cn.worker()
+    broker = Broker(url)
+    w = broker.worker()
     w.publish(func)
-    w.start()
+    def block():
+        w.start()
+    run(block)
 
     # -- task-invoking code --
-    cn = Broker(url)
-    default = cn.queue()
+    broker = Broker(url)
+    default = broker.queue()
     res = default.func('arg')
     assert res.completed
     assert res.value == 'arg', repr(res)
 
-def method_publishing(url):
+def method_publishing(url, run):
     # -- tasks.py --
     class Database(object):
         """stateful storage"""
@@ -32,22 +35,23 @@ def method_publishing(url):
         def update_value(self, value):
             self.db.update(value)
 
-    #if __name__ == '__main__':
     db = Database()
     obj = TaskObj(db)
-    cn = Broker(url)
-    w = cn.worker('obj')
+    broker = Broker(url)
+    w = broker.worker()
     w.publish(obj.update_value)
-    w.start()
+    def block():
+        w.start()
+    run(block)
 
     # -- task-invoking code --
-    cn = Broker(url)
-    obj = cn.queue('obj')
+    broker = Broker(url)
+    obj = broker.queue()
     res = obj.update_value(2)
     assert res.completed
     assert res.value is None, repr(res)
 
-def taskset(url):
+def taskset(url, run):
     # -- tasks.py --
     def func(arg):
         return arg
@@ -55,15 +59,17 @@ def taskset(url):
         return num
 
     #if __name__ == '__main__':
-    cn = Broker(url)
-    w = cn.worker()
+    broker = Broker(url)
+    w = broker.worker()
     w.publish(sum)
     w.publish(get_number)
-    w.start()
+    def block():
+        w.start()
+    run(block)
 
     # -- task-invoking code --
-    cn = Broker(url)
-    q = cn.queue()
+    broker = Broker(url)
+    q = broker.queue()
     tasks = TaskSet()
     for n in [1, 2, 3]:
         tasks.add(q.get_number, n)
@@ -76,13 +82,22 @@ def taskset(url):
     assert res.value == 6, repr(res)
 
 def test():
-    url = 'null://'
-    simple(url)
-    method_publishing(url)
-    taskset(url)
+    url = 'memory://'
+    broker = Broker(url) # keep a reference so we always get the same one
+    def run(block):
+        block()
 
-def test_redis():
-    url = 'redis://localhost:6379/0'
-    simple(url)
-    method_publishing(url)
-    taskset(url)
+    simple(url, run)
+    method_publishing(url, run)
+    taskset(url, run)
+
+#def test_redis():
+#    url = 'redis://localhost:6379/0'
+#    def run(block):
+#        t = Thread(target=block)
+#        t.daemon = True
+#        t.start()
+#
+#    simple(url, run)
+#    method_publishing(url, run)
+#    taskset(url, run)
