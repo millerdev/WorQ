@@ -18,7 +18,7 @@ def simple(url, thread_worker):
     broker.publish(func)
     with thread_worker(broker):
 
-        # -- task-invoking code, usually invoked from another process --
+        # -- task-invoking code, usually another process --
         q = Queue(url)
         res = q.func('arg')
         eq_(res, None)
@@ -46,7 +46,7 @@ def method_publishing(url, thread_worker):
     broker.publish(obj.update_value)
     with thread_worker(broker):
 
-        # -- task-invoking code, usually invoked from another process --
+        # -- task-invoking code, usually another process --
         q = Queue(url)
         res = q.update_value(2)
         eq_(res, None)
@@ -66,7 +66,7 @@ def taskset(url, thread_worker):
     broker.publish(sum)
     with thread_worker(broker):
 
-        # -- task-invoking code, usually invoked from another process --
+        # -- task-invoking code, usually another process --
         q = Queue(url, 'not-the-default-queue')
         tasks = TaskSet(result_timeout=5)
         for n in [1, 2, 3]:
@@ -88,9 +88,9 @@ def test():
         broker.start_worker()
         yield
 
-    simple(url, thread_worker)
-    method_publishing(url, thread_worker)
-    taskset(url, thread_worker)
+    yield simple, url, thread_worker
+    yield method_publishing, url, thread_worker
+    yield taskset, url, thread_worker
 
 def test_redis():
     url = 'redis://localhost:6379/0'
@@ -111,10 +111,9 @@ def test_redis():
                 broker.stop()
                 t.join()
 
-    simple(url, thread_worker)
-    method_publishing(url, thread_worker)
-    taskset(url, thread_worker)
-
+    yield simple, url, thread_worker
+    yield method_publishing, url, thread_worker
+    yield taskset, url, thread_worker
 
 def eventually(condition, value, timeout=1):
     end = time.time() + timeout
