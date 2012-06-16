@@ -102,7 +102,6 @@ def test_redis():
             except:
                 log.error('worker crashed', exc_info=True)
         t = Thread(target=run)
-        t.daemon = True # TODO remove
         t.start()
         try:
             yield

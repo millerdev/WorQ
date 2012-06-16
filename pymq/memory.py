@@ -1,3 +1,4 @@
+"""In-memory queue broker, normally used for testing."""
 from pymq.core import BaseBroker
 from weakref import WeakValueDictionary, WeakKeyDictionary
 
@@ -22,8 +23,8 @@ class MemoryBroker(BaseBroker):
     def subscribe(self, queues):
         pass
 
-    def push_task(self, queue, blob):
-        self.invoke(queue, blob)
+    def push_task(self, queue, message):
+        self.invoke(queue, message)
 
     def deferred_result(self, task_id):
         result = self.results_by_task.get(task_id)
@@ -32,15 +33,15 @@ class MemoryBroker(BaseBroker):
             self.results_by_task[task_id] = result
         return result
 
-    def set_result_blob(self, task_id, blob, timeout):
+    def set_result_message(self, task_id, message, timeout):
         result_obj = self.results_by_task[task_id]
-        self.results[result_obj] = blob
+        self.results[result_obj] = message
 
-    def pop_result_blob(self, task_id):
+    def pop_result_message(self, task_id):
         result_obj = self.results_by_task[task_id]
         return self.results.pop(result_obj, None)
 
-    def update_results(self, taskset_id, num, blob, timeout):
+    def update_results(self, taskset_id, num, message, timeout):
         # not thread-safe
         result = self.deferred_result(taskset_id)
         key = getattr(result, 'taskset_results_key', None)
@@ -48,6 +49,6 @@ class MemoryBroker(BaseBroker):
             key = type('TaskSet-%s' % taskset_id, (object,), {})
             result.taskset_results_key = key
         value = self.results.setdefault(key, [])
-        value.append(blob)
+        value.append(message)
         if len(value) == num:
             return self.results.pop(key)

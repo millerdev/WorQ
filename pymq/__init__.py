@@ -11,6 +11,11 @@ BROKER_REGISTRY = {
 }
 
 def Broker(url, *queues):
+    """Create a new broker
+
+    :param url: The broker URL (example: "memory://").
+    :param *queues: One or more queue names on which to publish functions.
+    """
     data = urlparse(url)
     try:
         make_broker = BROKER_REGISTRY[data.scheme]

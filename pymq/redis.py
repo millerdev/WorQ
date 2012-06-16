@@ -1,3 +1,4 @@
+"""Redis queue broker."""
 from __future__ import absolute_import
 import redis
 from pymq.core import BaseBroker
@@ -18,28 +19,28 @@ class RedisBroker(BaseBroker):
         queue_names = [QUEUE_PATTERN % q for q in queues]
         queue_trim = len(QUEUE_PATTERN % '')
         while True:
-            queue, blob = self.redis.blpop(*queue_names)
-            self.invoke(queue[queue_trim:], blob)
+            queue, message = self.redis.blpop(*queue_names)
+            self.invoke(queue[queue_trim:], message)
 
-    def push_task(self, queue, blob):
+    def push_task(self, queue, message):
         key = QUEUE_PATTERN % queue
-        self.redis.rpush(key, blob)
+        self.redis.rpush(key, message)
         return key
 
-    def set_result_blob(self, task_id, blob, timeout):
+    def set_result_message(self, task_id, message, timeout):
         key = RESULT_PATTERN % task_id
-        self.redis.setex(key, blob, timeout)
+        self.redis.setex(key, message, timeout)
 
-    def pop_result_blob(self, task_id):
+    def pop_result_message(self, task_id):
         key = RESULT_PATTERN % task_id
         pipe = self.redis.pipeline()
         pipe.get(key)
         pipe.delete(key)
         return pipe.execute()[0]
 
-    def update_results(self, taskset_id, num_tasks, blob, timeout):
+    def update_results(self, taskset_id, num_tasks, message, timeout):
         key = TASKSET_PATTERN % taskset_id
-        num = self.redis.rpush(key, blob)
+        num = self.redis.rpush(key, message)
         if num == num_tasks:
             pipe = self.redis.pipeline()
             pipe.lrange(key, 0, -1)

@@ -25,6 +25,12 @@ class BaseBroker(object):
         self.tasks = {stop_task.name: stop_task}
 
     def publish(self, callable, name=None):
+        """Publish a task callable on all queues.
+
+        :param callable: A function, method, or other callable.
+        :param name: The task name. The callable's `__name__` will be used if
+            this parameter is not given.
+        """
         if name is None:
             name = callable.__name__
         if name in self.tasks:
@@ -34,6 +40,10 @@ class BaseBroker(object):
         self.tasks[name] = callable
 
     def start_worker(self):
+        """Start a worker
+
+        This is normally a blocking call.
+        """
         try:
             self.subscribe(self.queues)
         except StopBroker:
@@ -51,19 +61,19 @@ class BaseBroker(object):
         return Queue(self, queue)
 
     def enqueue(self, queue, task_id, task_name, args, kw, options):
-        blob = dumps((task_id, task_name, args, kw, options))
+        message = dumps((task_id, task_name, args, kw, options))
         if options.get('result_timeout') is not None:
             result = self.deferred_result(task_id)
         else:
             result = None
-        self.push_task(queue, blob)
+        self.push_task(queue, message)
         return result
 
-    def invoke(self, queue, blob):
+    def invoke(self, queue, message):
         try:
-            task_id, task_name, args, kw, options = loads(blob)
+            task_id, task_name, args, kw, options = loads(message)
         except Exception:
-            log.error('cannot load task blob: %s', blob, exc_info=True)
+            log.error('cannot load task message: %s', message, exc_info=True)
             return
         log.debug('task %s.%s [%s]', queue, task_name, task_id)
         try:
@@ -86,8 +96,8 @@ class BaseBroker(object):
                 timeout = options.get('result_timeout')
                 if timeout is not None:
                     log.debug('set %s [%s] -> %r', task_name, task_id, result)
-                    blob = dumps((error, result))
-                    self.set_result_blob(task_id, blob, timeout)
+                    message = dumps((error, result))
+                    self.set_result_message(task_id, message, timeout)
 
     def process_taskset(self, queue, taskset, result):
         taskset_id, task_name, args, kw, options, num = taskset
@@ -101,36 +111,68 @@ class BaseBroker(object):
         return DeferredResult(self, task_id)
 
     def pop_result(self, task_id):
-        blob = self.pop_result_blob(task_id)
-        if blob is None:
+        message = self.pop_result_message(task_id)
+        if message is None:
             return None
-        return loads(blob)
+        return loads(message)
 
     def subscribe(self, queues):
+        """Begin listening for task messages on the given queues.
+
+        Must be implemented by each broker implementation. Not normally called
+        by user code. This is often a blocking call.
+        """
         raise NotImplementedError('abstract method')
 
-    def push_task(self, queue, blob):
+    def push_task(self, queue, message):
+        """Push a task message onto a named task queue.
+
+        Must be implemented by each broker implementation. Not normally called
+        by user code.
+
+        :param queue: Queue name.
+        :param message: Serialized task message.
+        """
         raise NotImplementedError('abstract method')
 
-    def set_result_blob(self, task_id, blob, timeout):
+    def set_result_message(self, task_id, message, timeout):
+        """Persist serialized result message.
+
+        Must be implemented by each broker implementation. Not normally called
+        by user code.
+
+        :param task_id: Unique task identifier string.
+        :param message: Serialized task message.
+        :param timeout: Number of seconds to persist the result before
+            discarding it.
+        """
         raise NotImplementedError('abstract method')
 
-    def pop_result_blob(self, task_id):
+    def pop_result_message(self, task_id):
+        """Pop serialized result message from persistent storage.
+
+        Must be implemented by each broker implementation. Not normally called
+        by user code.
+
+        :param task_id: Unique task identifier string.
+        :returns: The result message; None if not found.
+        """
         raise NotImplementedError('abstract method')
 
-    def update_results(self, taskset_id, num_tasks, blob, timeout):
+    def update_results(self, taskset_id, num_tasks, message, timeout):
         """Update the result set, returning all results if complete
 
-        This operation is atomic, meaning that only one caller will ever be
-        returned a value other than None for a given `taskset_id`.
+        Must be implemented by each broker implementation. Not normally called
+        by user code. This operation is atomic, meaning that only one caller
+        will ever be returned a value other than None for a given `taskset_id`.
 
         :param taskset_id: (string) The taskset unique identifier.
         :param num_tasks: (int) Number of tasks in the set.
-        :param blob: (string) A serialized result object to add to the
+        :param message: (string) A serialized result object to add to the
             list of results.
         :param timeout: (int) Discard results after this number of seconds.
         :returns: None if the number of updates has not reached num_tasks.
-            Otherwise return an unordered list of result blobs.
+            Otherwise return an unordered list of serialized result messages.
         """
         raise NotImplementedError('abstract method')
 
@@ -138,12 +180,15 @@ class BaseBroker(object):
 class Queue(object):
     """Queue object for invoking remote tasks"""
 
-    def __init__(self, broker, queue):
+    def __init__(self, broker, name):
         self.__broker = broker
-        self.__queue = queue
+        self.__queue = name
 
     def __getattr__(self, name):
         return Task(self.__broker, self.__queue, name)
+
+    def __repr__(self):
+        return '<Queue name=%s>' % self.__queue
 
 
 class Task(object):
@@ -161,6 +206,9 @@ class Task(object):
 
     def with_options(self, **options):
         return Task(self.broker, self.queue, self.name, options)
+
+    def __repr__(self):
+        return '<Task %s.%s>' % (self.queue, self.name)
 
 
 class DeferredResult(object):
