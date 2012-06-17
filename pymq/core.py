@@ -27,19 +27,23 @@ class AbstractBroker(object):
     def publish(self, callable, namespace='', name=None):
         """Publish a task callable on all queues.
 
-        :param callable: A function, method, or other callable.
+        :param callable: A function, method, or other callable. Alternately,
+            this may be a TaskSpace object, in which case all tasks in the
+            TaskSpace will be published on this broker.
         :param name: The task name. The callable's `__name__` will be used if
             this parameter is not given.
         """
-        if name is None:
-            name = callable.__name__
-        if name in self.tasks:
-            raise ValueError(
-                'cannot publish two tasks with the same name: %s' % name)
-        if namespace:
-            name = '%s.%s' % (namespace, name)
-        log.debug('published: %s on %s', name, self.queues)
-        self.tasks[name] = callable
+        if isinstance(callable, TaskSpace):
+            # TODO clean up this mess
+            assert namespace == '', namespace
+            assert name is None, name
+            space = callable
+        else:
+            space = TaskSpace(namespace)
+            space.task(callable, name=name)
+        for func, name in space.tasks:
+            log.debug('published: %s on %s', name, self.queues)
+            self.tasks[name] = func
 
     def start_worker(self):
         """Start a worker
@@ -356,6 +360,25 @@ class TaskSet(object):
         for t, a, k in self.tasks:
             t.with_options(**options)(*a, **k)
         return result
+
+
+class TaskSpace(object):
+
+    def __init__(self, name):
+        self.name = name
+        self.tasks = []
+
+    def task(self, callable, **kw):
+        name = kw.pop('name', None)
+        if name is None:
+            name = callable.__name__
+        if name in self.tasks:
+            raise ValueError(
+                'cannot publish two tasks with the same name: %s' % name)
+        if self.name:
+            name = '%s.%s' % (self.name, name)
+        self.tasks.append((callable, name))
+        return callable
 
 
 class StopBroker(BaseException): pass

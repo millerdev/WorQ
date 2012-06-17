@@ -3,7 +3,7 @@ import logging
 import time
 from contextlib import contextmanager
 from threading import Thread
-from pymq import Broker, Queue, TaskSet
+from pymq import Broker, Queue, TaskSet, TaskSpace
 
 log = logging.getLogger(__name__)
 
@@ -126,8 +126,35 @@ def namespaces(url, thread_worker):
 
         eventually((lambda:len(state) == 4 and state), ['join', 1, 'join', 2])
 
+
+def decorator(url, thread_worker):
+    state = []
+
+    ts = TaskSpace('foo')
+
+    @ts.task
+    def join():
+        state.append('join')
+
+    @ts.task
+    def kick(arg):
+        state.append(arg)
+
+    broker = Broker(url)
+    broker.publish(ts)
+    with thread_worker(broker):
+
+        # -- task-invoking code, usually another process --
+        broker = Broker(url)
+        foo = Queue(url, 'foo')
+
+        foo.join()
+        foo.kick(1)
+
+        eventually((lambda:len(state) == 2 and state), ['join', 1])
+
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-# testing helpers (probably not very meaningful example code)
+# testing helpers
 
 examples = [
     simple,
@@ -135,6 +162,7 @@ examples = [
     taskset,
     exception_in_task,
     namespaces,
+    decorator,
 ]
 
 def test_memory():

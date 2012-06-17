@@ -1,7 +1,7 @@
 # PyMQ implementation
 from __future__ import absolute_import
 from urlparse import urlparse
-from pymq.core import DEFAULT, TaskSet
+from pymq.core import DEFAULT, TaskSet, TaskSpace
 from pymq.memory import MemoryBroker
 from pymq.redis import RedisBroker
 
