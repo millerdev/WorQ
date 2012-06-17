@@ -87,7 +87,9 @@ class AbstractBroker(object):
             try:
                 result = task(*args, **kw)
                 error = False
-            except Exception, err:
+            except (StopBroker, KeyboardInterrupt):
+                raise
+            except:
                 log.error('%r task failed:', task_name, exc_info=True)
         finally:
             if 'taskset' in options:

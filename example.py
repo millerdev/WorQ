@@ -26,7 +26,7 @@ def simple(url, thread_worker):
         eventually((lambda:state), ['arg'])
 
 
-def method_publishing(url, thread_worker):
+def method_publishing(url, run_worker):
 
     class Database(object):
         """stateful storage"""
@@ -44,7 +44,7 @@ def method_publishing(url, thread_worker):
     obj = TaskObj(db)
     broker = Broker(url)
     broker.publish(obj.update_value)
-    with thread_worker(broker):
+    with run_worker(broker):
 
         # -- task-invoking code, usually another process --
         q = Queue(url)
@@ -54,7 +54,7 @@ def method_publishing(url, thread_worker):
         eventually((lambda:db.value), 2)
 
 
-def taskset(url, thread_worker):
+def taskset(url, run_worker):
 
     def func(arg):
         return arg
@@ -64,7 +64,7 @@ def taskset(url, thread_worker):
     broker = Broker(url, 'not-the-default-queue')
     broker.publish(get_number)
     broker.publish(sum)
-    with thread_worker(broker):
+    with run_worker(broker):
 
         # -- task-invoking code, usually another process --
         q = Queue(url, 'not-the-default-queue')
@@ -77,20 +77,48 @@ def taskset(url, thread_worker):
         assert res is not None
         eventually((lambda: res.value if res else None), 6)
 
+
+def exception_in_task(url, run_worker):
+    state = []
+
+    def bad():
+        raise SystemExit('something bad happened')
+    def good(arg):
+        state.append(arg)
+
+    broker = Broker(url)
+    broker.publish(bad)
+    broker.publish(good)
+    with run_worker(broker):
+
+        # -- task-invoking code, usually another process --
+        q = Queue(url)
+
+        eq_(q.bad(), None)
+        eq_(q.good(1), None)
+
+        eventually((lambda: state), [1])
+
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # testing helpers (probably not very meaningful example code)
 
-def test():
+examples = [
+    simple,
+    method_publishing,
+    taskset,
+    exception_in_task,
+]
+
+def test_memory():
     url = 'memory://'
     broker = Broker(url) # keep a reference so we always get the same one
     @contextmanager
-    def thread_worker(broker):
-        broker.start_worker()
+    def run_worker(broker):
+        broker.start_worker() # NOOP
         yield
 
-    yield simple, url, thread_worker
-    yield method_publishing, url, thread_worker
-    yield taskset, url, thread_worker
+    for example in examples:
+        yield example, url, run_worker
 
 def test_redis():
     url = 'redis://localhost:6379/0'
@@ -110,9 +138,8 @@ def test_redis():
                 broker.stop()
                 t.join()
 
-    yield simple, url, thread_worker
-    yield method_publishing, url, thread_worker
-    yield taskset, url, thread_worker
+    for example in examples:
+        yield example, url, thread_worker
 
 def eventually(condition, value, timeout=1):
     end = time.time() + timeout
