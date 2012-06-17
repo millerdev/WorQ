@@ -104,18 +104,18 @@ def exception_in_task(url, run_worker):
         eventually((lambda: state), [1])
 
 
-def task_decorator(url, run_worker):
+def task_namespaces(url, run_worker):
     state = []
     __name__ = 'module.path'
 
     ts = TaskSpace(__name__)
 
     @ts.task
-    def join():
-        state.append('join')
+    def foo():
+        state.append('foo')
 
     @ts.task
-    def kick(arg):
+    def bar(arg):
         state.append(arg)
 
     broker = Broker(url)
@@ -125,13 +125,13 @@ def task_decorator(url, run_worker):
         # -- task-invoking code, usually another process --
         q = Queue(url, 'module.path')
 
-        q.join()
-        q.kick(1)
+        q.foo()
+        q.bar(1)
 
-        eventually((lambda:len(state) == 2 and state), ['join', 1])
+        eventually((lambda:len(state) == 2 and state), ['foo', 1])
 
 
-def queue_namespaces(url, run_worker):
+def more_namespaces(url, run_worker):
     state = []
 
     foo = TaskSpace('foo')
@@ -139,16 +139,16 @@ def queue_namespaces(url, run_worker):
     baz = TaskSpace('foo.bar.baz')
 
     @foo.task
-    def join():
-        state.append('foo-join')
+    def join(arg):
+        state.append('foo-join %s' % arg)
 
     @bar.task
     def kick(arg):
         state.append('bar-kick %s' % arg)
 
     @baz.task
-    def join():
-        state.append('baz-join')
+    def join(arg):
+        state.append('baz-join %s' % arg)
 
     @baz.task
     def kick(arg):
@@ -163,16 +163,16 @@ def queue_namespaces(url, run_worker):
         # -- task-invoking code, usually another process --
         foo = Queue(url, 'foo')
 
-        foo.join()
-        foo.bar.kick(1)
-        foo.bar.baz.join()
-        foo.bar.baz.kick(2)
+        foo.join(1)
+        foo.bar.kick(2)
+        foo.bar.baz.join(3)
+        foo.bar.baz.kick(4)
 
         eventually((lambda:len(state) == 4 and state), [
-            'foo-join',
-            'bar-kick 1',
-            'baz-join',
-            'baz-kick 2',
+            'foo-join 1',
+            'bar-kick 2',
+            'baz-join 3',
+            'baz-kick 4',
         ])
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -183,8 +183,8 @@ examples = [
     method_publishing,
     taskset,
     exception_in_task,
-    task_decorator,
-    queue_namespaces,
+    task_namespaces,
+    more_namespaces,
 ]
 
 def test_memory():

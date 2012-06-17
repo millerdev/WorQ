@@ -366,6 +366,13 @@ class TaskSpace(object):
     def task(self, callable, name=None):
         """Add a task to the namespace
 
+        This can be used as a decorator::
+            ts = TaskSpace(__name__)
+
+            @ts.task
+            def frob(value):
+                db.update(value)
+
         :param callable: A callable object, usually a function or method.
         :param name: Task name. Defaults to `callable.__name__`.
         """
