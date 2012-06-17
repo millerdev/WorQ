@@ -6,9 +6,13 @@ from threading import Thread
 from pymq import Broker, Queue, TaskSet, TaskSpace
 
 log = logging.getLogger(__name__)
+test_urls = {
+    'memory': 'memory://',
+    'redis': 'redis://localhost:6379/0',
+}
 
 
-def simple(url, thread_worker):
+def simple(url, run_worker):
     state = []
 
     def func(arg):
@@ -16,13 +20,14 @@ def simple(url, thread_worker):
 
     broker = Broker(url)
     broker.publish(func)
-    with thread_worker(broker):
+    with run_worker(broker):
 
         # -- task-invoking code, usually another process --
         q = Queue(url)
-        res = q.func('arg')
-        eq_(res, None)
 
+        res = q.func('arg')
+
+        eq_(res, None)
         eventually((lambda:state), ['arg'])
 
 
@@ -48,8 +53,7 @@ def method_publishing(url, run_worker):
 
         # -- task-invoking code, usually another process --
         q = Queue(url)
-        res = q.update_value(2)
-        eq_(res, None)
+        q.update_value(2)
 
         eventually((lambda:db.value), 2)
 
@@ -68,10 +72,10 @@ def taskset(url, run_worker):
 
         # -- task-invoking code, usually another process --
         q = Queue(url, name='not-the-default-queue')
+
         tasks = TaskSet(result_timeout=5)
         for n in [1, 2, 3]:
             tasks.add(q.get_number, n)
-
         res = tasks(q.sum)
 
         assert res is not None
@@ -100,7 +104,7 @@ def exception_in_task(url, run_worker):
         eventually((lambda: state), [1])
 
 
-def namespaces(url, thread_worker):
+def namespaces(url, run_worker):
     state = []
 
     def join():
@@ -113,10 +117,9 @@ def namespaces(url, thread_worker):
     broker.publish(kick, 'foo.bar')
     broker.publish(join, 'foo.bar.baz')
     broker.publish(kick, 'foo.bar.baz')
-    with thread_worker(broker):
+    with run_worker(broker):
 
         # -- task-invoking code, usually another process --
-        broker = Broker(url)
         foo = Queue(url, 'foo')
 
         foo.join()
@@ -127,10 +130,11 @@ def namespaces(url, thread_worker):
         eventually((lambda:len(state) == 4 and state), ['join', 1, 'join', 2])
 
 
-def decorator(url, thread_worker):
+def decorator(url, run_worker):
     state = []
+    __name__ = 'module.path'
 
-    ts = TaskSpace('foo')
+    ts = TaskSpace(__name__)
 
     @ts.task
     def join():
@@ -142,14 +146,13 @@ def decorator(url, thread_worker):
 
     broker = Broker(url)
     broker.publish(ts)
-    with thread_worker(broker):
+    with run_worker(broker):
 
         # -- task-invoking code, usually another process --
-        broker = Broker(url)
-        foo = Queue(url, 'foo')
+        q = Queue(url, 'module.path')
 
-        foo.join()
-        foo.kick(1)
+        q.join()
+        q.kick(1)
 
         eventually((lambda:len(state) == 2 and state), ['join', 1])
 
@@ -166,7 +169,7 @@ examples = [
 ]
 
 def test_memory():
-    url = 'memory://'
+    url = test_urls['memory']
     broker = Broker(url) # keep a reference so we always get the same one
     @contextmanager
     def run_worker(broker):
@@ -177,7 +180,7 @@ def test_memory():
         yield example, url, run_worker
 
 def test_redis():
-    url = 'redis://localhost:6379/0'
+    url = test_urls['redis']
     @contextmanager
     def thread_worker(broker):
         def run():
