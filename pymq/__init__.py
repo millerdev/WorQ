@@ -24,12 +24,16 @@ def Broker(url, *queues, **kw):
         raise ValueError('invalid broker URL: %s' % url)
     return make_broker(data, *queues, **kw)
 
-def Queue(url, name=DEFAULT):
+def Queue(url, namespace='', name=DEFAULT):
     """Get a queue object for invoking remote tasks
 
     :param url: URL of the task queue.
+    :param namespace: Task namespace (similar to a python module). Must match
+        the namespace in which the remote callable was published.
     :param name: The name of the queue on which tasks should be invoked.
+        Queued tasks will be invoked iff there is a worker listening on this
+        named queue. Default value: 'default'.
     :returns: A Queue object.
     """
     broker = Broker(url)
-    return broker.queue(name)
+    return broker.queue(namespace, name=name)

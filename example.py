@@ -67,7 +67,7 @@ def taskset(url, run_worker):
     with run_worker(broker):
 
         # -- task-invoking code, usually another process --
-        q = Queue(url, 'not-the-default-queue')
+        q = Queue(url, name='not-the-default-queue')
         tasks = TaskSet(result_timeout=5)
         for n in [1, 2, 3]:
             tasks.add(q.get_number, n)
@@ -99,6 +99,33 @@ def exception_in_task(url, run_worker):
 
         eventually((lambda: state), [1])
 
+
+def namespaces(url, thread_worker):
+    state = []
+
+    def join():
+        state.append('join')
+    def kick(arg):
+        state.append(arg)
+
+    broker = Broker(url)
+    broker.publish(join, 'foo')
+    broker.publish(kick, 'foo.bar')
+    broker.publish(join, 'foo.bar.baz')
+    broker.publish(kick, 'foo.bar.baz')
+    with thread_worker(broker):
+
+        # -- task-invoking code, usually another process --
+        broker = Broker(url)
+        foo = Queue(url, 'foo')
+
+        foo.join()
+        foo.bar.kick(1)
+        foo.bar.baz.join()
+        foo.bar.baz.kick(2)
+
+        eventually((lambda:len(state) == 4 and state), ['join', 1, 'join', 2])
+
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # testing helpers (probably not very meaningful example code)
 
@@ -107,6 +134,7 @@ examples = [
     method_publishing,
     taskset,
     exception_in_task,
+    namespaces,
 ]
 
 def test_memory():

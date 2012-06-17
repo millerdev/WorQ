@@ -24,7 +24,7 @@ class AbstractBroker(object):
         self.queues = list(queues) if queues else [DEFAULT]
         self.tasks = {stop_task.name: stop_task}
 
-    def publish(self, callable, name=None):
+    def publish(self, callable, namespace='', name=None):
         """Publish a task callable on all queues.
 
         :param callable: A function, method, or other callable.
@@ -36,6 +36,8 @@ class AbstractBroker(object):
         if name in self.tasks:
             raise ValueError(
                 'cannot publish two tasks with the same name: %s' % name)
+        if namespace:
+            name = '%s.%s' % (namespace, name)
         log.debug('published: %s on %s', name, self.queues)
         self.tasks[name] = callable
 
@@ -57,8 +59,8 @@ class AbstractBroker(object):
         """
         self.enqueue(self.queues[0], 'stop', stop_task.name, (), {}, {})
 
-    def queue(self, queue=DEFAULT):
-        return Queue(self, queue)
+    def queue(self, namespace='', name=DEFAULT):
+        return Queue(self, namespace, name=name)
 
     def enqueue(self, queue, task_id, task_name, args, kw, options):
         message = dumps((task_id, task_name, args, kw, options))
@@ -179,37 +181,61 @@ class AbstractBroker(object):
 
 
 class Queue(object):
-    """Queue object for invoking remote tasks"""
+    """Queue object for invoking remote tasks
 
-    def __init__(self, broker, name):
+    NOTE two queue objects are considered equal if they refer to the same
+    queue on the same broker (their namespaces may be different).
+    """
+
+    def __init__(self, broker, namespace='', name=DEFAULT):
         self.__broker = broker
-        self.__queue = name
+        self.__name = name
+        self.__namespace = namespace
 
     def __getattr__(self, name):
-        return Task(self.__broker, self.__queue, name)
+        if self.__namespace:
+            name = '%s.%s' % (self.__namespace, name)
+        return Queue(self.__broker, name, self.__name)
+
+    def __call__(self, *args, **kw):
+        return Task(self)(*args, **kw)
+
+    def __eq__(self, other):
+        if not isinstance(other, type(self)):
+            return False
+        return (self.__broker, self.__name) == (other.__broker, other.__name)
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
 
     def __repr__(self):
-        return '<Queue name=%s>' % self.__queue
+        return '<Queue %s namespace=%s>' % (self.__name, self.__namespace)
+
+    def __str__(self):
+        return self.__name
 
 
 class Task(object):
 
-    def __init__(self, broker, queue, name, options={}):
-        self.broker = broker
+    def __init__(self, queue, options={}):
         self.queue = queue
-        self.name = name
-        self.opts = options
+        self.name = queue._Queue__namespace
+        self.options = options
+
+    @property
+    def broker(self):
+        return self.queue._Queue__broker
 
     def __call__(self, *args, **kw):
         id = uuid4().hex
-        return self.broker.enqueue(
-            self.queue, id, self.name, args, kw, self.opts)
+        return self.queue._Queue__broker.enqueue(
+            self.queue._Queue__name, id, self.name, args, kw, self.options)
 
     def with_options(self, **options):
-        return Task(self.broker, self.queue, self.name, options)
+        return Task(self.queue, options)
 
     def __repr__(self):
-        return '<Task %s.%s>' % (self.queue, self.name)
+        return '<Task %s %s>' % (self.queue._Queue__name, self.name)
 
 
 class DeferredResult(object):
@@ -297,12 +323,13 @@ class TaskSet(object):
             raise ValueError('expected at least two positional '
                 'arguments, got %s' % len(self_task_args))
         self = self_task_args[0]
-        task = self_task_args[1]
+        task = Task(self_task_args[1])
         args = self_task_args[2:]
         if self.queue is None:
-            self.queue = (task.broker, task.queue)
-        elif self.queue != (task.broker, task.queue):
-            raise ValueError('cannot combine tasks from discrete queues')
+            self.queue = task.queue
+        elif self.queue != task.queue:
+            raise ValueError('cannot combine tasks from discrete queues: '
+                '%s != %s' % (self.queue, task.queue))
         self.tasks.append((task, args, kw))
 
     def __call__(*self_task_args, **kw):
@@ -318,11 +345,10 @@ class TaskSet(object):
         TaskSet.add(*self_task_args, **kw)
         self = self_task_args[0]
         task, args, kw = self.tasks.pop()
-        broker, queue = self.queue
         num = len(self.tasks)
         taskset_id = uuid4().hex
         if self.options.get('result_timeout') is not None:
-            result = broker.deferred_result(taskset_id)
+            result = task.broker.deferred_result(taskset_id)
         else:
             result = None
         options = {'taskset':
