@@ -104,33 +104,7 @@ def exception_in_task(url, run_worker):
         eventually((lambda: state), [1])
 
 
-def namespaces(url, run_worker):
-    state = []
-
-    def join():
-        state.append('join')
-    def kick(arg):
-        state.append(arg)
-
-    broker = Broker(url)
-    broker.publish(join, 'foo')
-    broker.publish(kick, 'foo.bar')
-    broker.publish(join, 'foo.bar.baz')
-    broker.publish(kick, 'foo.bar.baz')
-    with run_worker(broker):
-
-        # -- task-invoking code, usually another process --
-        foo = Queue(url, 'foo')
-
-        foo.join()
-        foo.bar.kick(1)
-        foo.bar.baz.join()
-        foo.bar.baz.kick(2)
-
-        eventually((lambda:len(state) == 4 and state), ['join', 1, 'join', 2])
-
-
-def decorator(url, run_worker):
+def task_decorator(url, run_worker):
     state = []
     __name__ = 'module.path'
 
@@ -156,6 +130,51 @@ def decorator(url, run_worker):
 
         eventually((lambda:len(state) == 2 and state), ['join', 1])
 
+
+def queue_namespaces(url, run_worker):
+    state = []
+
+    foo = TaskSpace('foo')
+    bar = TaskSpace('foo.bar')
+    baz = TaskSpace('foo.bar.baz')
+
+    @foo.task
+    def join():
+        state.append('foo-join')
+
+    @bar.task
+    def kick(arg):
+        state.append('bar-kick %s' % arg)
+
+    @baz.task
+    def join():
+        state.append('baz-join')
+
+    @baz.task
+    def kick(arg):
+        state.append('baz-kick %s' % arg)
+
+    broker = Broker(url)
+    broker.publish(foo)
+    broker.publish(bar)
+    broker.publish(baz)
+    with run_worker(broker):
+
+        # -- task-invoking code, usually another process --
+        foo = Queue(url, 'foo')
+
+        foo.join()
+        foo.bar.kick(1)
+        foo.bar.baz.join()
+        foo.bar.baz.kick(2)
+
+        eventually((lambda:len(state) == 4 and state), [
+            'foo-join',
+            'bar-kick 1',
+            'baz-join',
+            'baz-kick 2',
+        ])
+
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # testing helpers
 
@@ -164,8 +183,8 @@ examples = [
     method_publishing,
     taskset,
     exception_in_task,
-    namespaces,
-    decorator,
+    task_decorator,
+    queue_namespaces,
 ]
 
 def test_memory():

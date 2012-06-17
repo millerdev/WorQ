@@ -24,25 +24,19 @@ class AbstractBroker(object):
         self.queues = list(queues) if queues else [DEFAULT]
         self.tasks = {stop_task.name: stop_task}
 
-    def publish(self, callable, namespace='', name=None):
-        """Publish a task callable on all queues.
+    def publish(self, obj):
+        """Publish a task callable or TaskSpace on all queues.
 
-        :param callable: A function, method, or other callable. Alternately,
-            this may be a TaskSpace object, in which case all tasks in the
-            TaskSpace will be published on this broker.
-        :param name: The task name. The callable's `__name__` will be used if
-            this parameter is not given.
+        :param obj: A TaskSpace or callable with a `__name__`.
         """
-        if isinstance(callable, TaskSpace):
-            # TODO clean up this mess
-            assert namespace == '', namespace
-            assert name is None, name
-            space = callable
+        if isinstance(obj, TaskSpace):
+            space = obj
         else:
-            space = TaskSpace(namespace)
-            space.task(callable, name=name)
-        for func, name in space.tasks:
-            log.debug('published: %s on %s', name, self.queues)
+            space = TaskSpace()
+            space.task(obj)
+        for name, func in space.tasks.iteritems():
+            if name in self.tasks:
+                raise ValueError('task %r conflicts with existing task' % name)
             self.tasks[name] = func
 
     def start_worker(self):
@@ -363,21 +357,25 @@ class TaskSet(object):
 
 
 class TaskSpace(object):
+    """Task namespace container"""
 
-    def __init__(self, name):
+    def __init__(self, name=''):
         self.name = name
-        self.tasks = []
+        self.tasks = {}
 
-    def task(self, callable, **kw):
-        name = kw.pop('name', None)
+    def task(self, callable, name=None):
+        """Add a task to the namespace
+
+        :param callable: A callable object, usually a function or method.
+        :param name: Task name. Defaults to `callable.__name__`.
+        """
         if name is None:
             name = callable.__name__
-        if name in self.tasks:
-            raise ValueError(
-                'cannot publish two tasks with the same name: %s' % name)
         if self.name:
             name = '%s.%s' % (self.name, name)
-        self.tasks.append((callable, name))
+        if name in self.tasks:
+            raise ValueError('task %r conflicts with existing task' % name)
+        self.tasks[name] = callable
         return callable
 
 
