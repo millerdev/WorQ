@@ -8,7 +8,7 @@ from pymq import Broker, Queue, TaskSet, TaskSpace
 log = logging.getLogger(__name__)
 test_urls = {
     'memory': 'memory://',
-    'redis': 'redis://localhost:6379/0',
+    'redis': 'redis://localhost:16379/0', # NOTE non-standard port
 }
 
 
@@ -19,7 +19,7 @@ def simple(url, run_worker):
         state.append(arg)
 
     broker = Broker(url)
-    broker.publish(func)
+    broker.expose(func)
     with run_worker(broker):
 
         # -- task-invoking code, usually another process --
@@ -31,7 +31,7 @@ def simple(url, run_worker):
         eventually((lambda:state), ['arg'])
 
 
-def method_publishing(url, run_worker):
+def expose_method(url, run_worker):
 
     class Database(object):
         """stateful storage"""
@@ -48,7 +48,7 @@ def method_publishing(url, run_worker):
     db = Database()
     obj = TaskObj(db)
     broker = Broker(url)
-    broker.publish(obj.update_value)
+    broker.expose(obj.update_value)
     with run_worker(broker):
 
         # -- task-invoking code, usually another process --
@@ -66,8 +66,8 @@ def taskset(url, run_worker):
         return num
 
     broker = Broker(url, 'not-the-default-queue')
-    broker.publish(get_number)
-    broker.publish(sum)
+    broker.expose(get_number)
+    broker.expose(sum)
     with run_worker(broker):
 
         # -- task-invoking code, usually another process --
@@ -91,8 +91,8 @@ def exception_in_task(url, run_worker):
         state.append(arg)
 
     broker = Broker(url)
-    broker.publish(bad)
-    broker.publish(good)
+    broker.expose(bad)
+    broker.expose(good)
     with run_worker(broker):
 
         # -- task-invoking code, usually another process --
@@ -119,7 +119,7 @@ def task_namespaces(url, run_worker):
         state.append(arg)
 
     broker = Broker(url)
-    broker.publish(ts)
+    broker.expose(ts)
     with run_worker(broker):
 
         # -- task-invoking code, usually another process --
@@ -155,9 +155,9 @@ def more_namespaces(url, run_worker):
         state.append('baz-kick %s' % arg)
 
     broker = Broker(url)
-    broker.publish(foo)
-    broker.publish(bar)
-    broker.publish(baz)
+    broker.expose(foo)
+    broker.expose(bar)
+    broker.expose(baz)
     with run_worker(broker):
 
         # -- task-invoking code, usually another process --
@@ -180,7 +180,7 @@ def more_namespaces(url, run_worker):
 
 examples = [
     simple,
-    method_publishing,
+    expose_method,
     taskset,
     exception_in_task,
     task_namespaces,

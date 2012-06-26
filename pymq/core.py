@@ -9,7 +9,7 @@ log = logging.getLogger(__name__)
 
 class AbstractBroker(object):
 
-    default_result_timeout = 180
+    default_result_timeout = 60 * 60 * 24 # one day
 
     def __init__(self, url, *queues):
         self.url = url
@@ -22,12 +22,12 @@ class AbstractBroker(object):
             self.port = None
         self.path = url.path
         self.queues = list(queues) if queues else [DEFAULT]
-        self.tasks = {stop_task.name: stop_task}
+        self.clear_tasks()
 
-    def publish(self, obj):
-        """Publish a task callable or TaskSpace on all queues.
+    def expose(self, obj):
+        """Expose a TaskSpace or task callable to all queues.
 
-        :param obj: A TaskSpace or callable with a `__name__`.
+        :param obj: A TaskSpace or task callable.
         """
         if isinstance(obj, TaskSpace):
             space = obj
@@ -38,6 +38,10 @@ class AbstractBroker(object):
             if name in self.tasks:
                 raise ValueError('task %r conflicts with existing task' % name)
             self.tasks[name] = func
+
+    def clear_tasks(self):
+        """Clear all exposed tasks from this broker"""
+        self.tasks = {stop_task.name: stop_task}
 
     def start_worker(self):
         """Start a worker
@@ -66,7 +70,7 @@ class AbstractBroker(object):
             result = self.deferred_result(task_id)
         else:
             result = None
-        self.push_task(queue, message)
+        self.enqueue_task(queue, message)
         return result
 
     def invoke(self, queue, message):
@@ -75,7 +79,7 @@ class AbstractBroker(object):
         except Exception:
             log.error('cannot load task message: %s', message, exc_info=True)
             return
-        log.debug('task %s.%s [%s]', queue, task_name, task_id)
+        log.debug('task %s %s [%s]', queue, task_name, task_id)
         try:
             error = True
             result = None
@@ -242,9 +246,7 @@ class DeferredResult(object):
     Meaningful attributes:
     - value: The result value. This is set when evaluating the boolean value of
         the DeferredResult object after the task returns successfully.
-    - completed: A boolean value denoting if the task has completed. Retrieving
-        this value will NOT retrieve the value from the broker if it has not
-        yet arrived.
+    - error: Set if the task completed with an error.
     """
 
     def __init__(self, broker, task_id):
@@ -284,7 +286,7 @@ class TaskSet(object):
         timeout value is also used to retain intermediate task results. It
         should be longer than the longest-running task in the set. The default
         is None, which means the final result will be ignored; the default
-        timeout for intermediate tasks is 3 minutes (180 seconds) in that case.
+        timeout for intermediate tasks is 24 hours in that case.
 
     Usage:
         >>> t = TaskSet(result_timeout=60)
@@ -295,7 +297,8 @@ class TaskSet(object):
         <DeferredResult value=46>
 
     TaskSet algorithm:
-    - Head tasks (added with .add) are queued to be executed in parallel.
+    - Head tasks (added with .add) are enqueued to be executed in parallel
+      when the TaskSet is called with the final task.
     - Upon completion of each head task the results are checked to determine
       if all head tasks have completed. If so, pop the results from the
       persistent store and enqueue the final task (passed to .__call__).

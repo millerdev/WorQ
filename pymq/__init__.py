@@ -14,7 +14,7 @@ def Broker(url, *queues, **kw):
     """Create a new broker
 
     :param url: The broker URL (example: "memory://").
-    :param *queues: One or more queue names on which to publish functions.
+    :param *queues: One or more queue names on which to expose functions.
     :param **kw: Keyword arguments to pass to the broker constructor.
     """
     data = urlparse(url)
@@ -29,7 +29,7 @@ def Queue(url, namespace='', name=DEFAULT):
 
     :param url: URL of the task queue.
     :param namespace: Task namespace (similar to a python module). Must match
-        the namespace in which the remote callable was published.
+        the namespace in which the remote callable was exposed.
     :param name: The name of the queue on which tasks should be invoked.
         Queued tasks will be invoked iff there is a worker listening on this
         named queue. Default value: 'default'.

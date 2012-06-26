@@ -23,7 +23,7 @@ class MemoryBroker(AbstractBroker):
     def subscribe(self, queues):
         pass
 
-    def push_task(self, queue, message):
+    def enqueue_task(self, queue, message):
         self.invoke(queue, message)
 
     def deferred_result(self, task_id):

@@ -29,7 +29,7 @@ class RedisBroker(AbstractBroker):
             queue, message = self.redis.blpop(*queue_names)
             self.invoke(queue[queue_trim:], message)
 
-    def push_task(self, queue, message):
+    def enqueue_task(self, queue, message):
         key = QUEUE_PATTERN % queue
         self.redis.rpush(key, message)
         return key
