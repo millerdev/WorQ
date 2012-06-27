@@ -1,28 +1,30 @@
 # PyMQ implementation
 from __future__ import absolute_import
 from urlparse import urlparse
-from pymq.core import DEFAULT, TaskSet, TaskSpace
-from pymq.memory import MemoryBroker
-from pymq.redis import RedisBroker
+from pymq.core import DEFAULT, Broker as _Broker, Task, TaskSet, TaskSpace
+from pymq.memory import MemoryQueue, MemoryResults
+from pymq.redis import RedisQueue, RedisResults
 
 BROKER_REGISTRY = {
-    'memory': MemoryBroker.factory,
-    'redis': RedisBroker,
+    'memory': (MemoryQueue.factory, MemoryResults.factory),
+    'redis': (RedisQueue, RedisResults),
 }
 
-def Broker(url, *queues, **kw):
+def Broker(url, *queues):
     """Create a new broker
 
-    :param url: The broker URL (example: "memory://").
-    :param *queues: One or more queue names on which to expose functions.
-    :param **kw: Keyword arguments to pass to the broker constructor.
+    :param url: Message queue and result store URL (this convenience function
+        uses the same URL to construct both).
+    :param *queues: One or more queue names on which to expose or invoke tasks.
     """
-    data = urlparse(url)
+    url_scheme = urlparse(url).scheme
     try:
-        make_broker = BROKER_REGISTRY[data.scheme]
+        make_queue, make_results = BROKER_REGISTRY[url_scheme]
     except KeyError:
         raise ValueError('invalid broker URL: %s' % url)
-    return make_broker(data, *queues, **kw)
+    message_queue = make_queue(url, queues)
+    result_store = make_results(url)
+    return _Broker(message_queue, result_store)
 
 def Queue(url, namespace='', name=DEFAULT):
     """Get a queue object for invoking remote tasks

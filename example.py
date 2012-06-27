@@ -6,10 +6,10 @@ from threading import Thread
 from pymq import Broker, Queue, TaskSet, TaskSpace
 
 log = logging.getLogger(__name__)
-test_urls = {
-    'memory': 'memory://',
-    'redis': 'redis://localhost:16379/0', # NOTE non-standard port
-}
+test_urls = [
+    'memory://',
+    'redis://localhost:16379/0', # NOTE non-standard port
+]
 
 
 def simple(url, run_worker):
@@ -187,37 +187,26 @@ examples = [
     more_namespaces,
 ]
 
-def test_memory():
-    url = test_urls['memory']
-    broker = Broker(url) # keep a reference so we always get the same one
-    @contextmanager
-    def run_worker(broker):
-        broker.start_worker() # NOOP
-        yield
+def test_examples():
+    for url in test_urls:
+        for example in examples:
+            yield example, url, thread_worker
 
-    for example in examples:
-        yield example, url, run_worker
-
-def test_redis():
-    url = test_urls['redis']
-    @contextmanager
-    def thread_worker(broker):
-        def run():
-            try:
-                broker.start_worker()
-            except:
-                log.error('worker crashed', exc_info=True)
-        t = Thread(target=run)
-        t.start()
+@contextmanager
+def thread_worker(broker):
+    def run():
         try:
-            yield
-        finally:
-            if t.is_alive():
-                broker.stop()
-                t.join()
-
-    for example in examples:
-        yield example, url, thread_worker
+            broker.start_worker()
+        except:
+            log.error('worker crashed', exc_info=True)
+    t = Thread(target=run)
+    t.start()
+    try:
+        yield
+    finally:
+        if t.is_alive():
+            broker.stop()
+            t.join()
 
 def eventually(condition, value, timeout=1):
     end = time.time() + timeout

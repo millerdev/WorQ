@@ -7,21 +7,13 @@ from weakref import ref as weakref
 DEFAULT = 'default'
 log = logging.getLogger(__name__)
 
-class AbstractBroker(object):
+class Broker(object):
 
     default_result_timeout = 60 * 60 * 24 # one day
 
-    def __init__(self, url, *queues):
-        self.url = url
-        if ':' in url.netloc:
-            host, port = url.netloc.rsplit(':', 1)
-            self.host = host
-            self.port = int(port)
-        else:
-            self.host = url.netloc
-            self.port = None
-        self.path = url.path
-        self.queues = list(queues) if queues else [DEFAULT]
+    def __init__(self, message_queue, result_store):
+        self.messages = message_queue
+        self.results = result_store
         self.clear_tasks()
 
     def expose(self, obj):
@@ -49,17 +41,19 @@ class AbstractBroker(object):
         This is normally a blocking call.
         """
         try:
-            self.subscribe(self.queues)
+            for queue, message in self.messages:
+                self.invoke(queue, message)
         except StopBroker:
             log.info('broker stopped')
 
     def stop(self):
-        """Stop a random worker to the queue.
+        """Stop a random worker.
 
         WARNING this is only meant for testing purposes. It will likely not do
         what you expect in an environment with more than one worker.
         """
-        self.enqueue(self.queues[0], 'stop', stop_task.name, (), {}, {})
+        queue = self.messages.stop_queue
+        self.enqueue(queue, 'stop', stop_task.name, (), {}, {})
 
     def queue(self, namespace='', name=DEFAULT):
         return Queue(self, namespace, name=name)
@@ -67,10 +61,10 @@ class AbstractBroker(object):
     def enqueue(self, queue, task_id, task_name, args, kw, options):
         message = dumps((task_id, task_name, args, kw, options))
         if options.get('result_timeout') is not None:
-            result = self.deferred_result(task_id)
+            result = self.results.deferred_result(task_id)
         else:
             result = None
-        self.enqueue_task(queue, message)
+        self.messages.enqueue_task(queue, message)
         return result
 
     def invoke(self, queue, message):
@@ -79,7 +73,7 @@ class AbstractBroker(object):
         except Exception:
             log.error('cannot load task message: %s', message, exc_info=True)
             return
-        log.debug('task %s %s [%s]', queue, task_name, task_id)
+        log.debug('task %s [%s:%s]', task_name, queue, task_id)
         try:
             error = True
             result = None
@@ -102,58 +96,88 @@ class AbstractBroker(object):
                 timeout = options.get('result_timeout')
                 if timeout is not None:
                     message = dumps((error, result))
-                    self.set_result_message(task_id, message, timeout)
+                    self.results.set_result(task_id, message, timeout)
 
     def process_taskset(self, queue, taskset, result):
         taskset_id, task_name, args, kw, options, num = taskset
         timeout = options.get('result_timeout', self.default_result_timeout)
-        results = self.update_results(taskset_id, num, dumps(result), timeout)
+        results = self.results.update(taskset_id, num, dumps(result), timeout)
         if results is not None:
             args = ([loads(r) for r in results],) + args
             self.enqueue(queue, taskset_id, task_name, args, kw, options)
 
     def deferred_result(self, task_id):
-        return DeferredResult(self, task_id)
+        return self.results.deferred_result(task_id)
 
-    def pop_result(self, task_id):
-        message = self.pop_result_message(task_id)
-        if message is None:
-            return None
-        return loads(message)
 
-    def subscribe(self, queues):
-        """Begin listening for task messages on the given queues.
+class AbstractMessageQueue(object):
+    """Message queue abstract base class
 
-        Must be implemented by each broker implementation. Not normally called
-        by user code. This is often a blocking call.
+    :param url: URL used to identify the queue.
+    :param *queues: One or more strings representing the names of queues to
+        listen for during message iteration.
+    """
+
+    def __init__(self, url, queues):
+        self.url = url
+        self.queues = list(queues) if queues else [DEFAULT]
+
+    @property
+    def stop_queue(self):
+        return self.queues[0]
+
+    def __iter__(self):
+        """Return an iterator that yields task messages.
+
+        Task iteration normally blocks when there are no pending tasks to
+        execute. Each yielded item must be a two-tuple consisting of
+        (<queue name>, <task message>).
         """
         raise NotImplementedError('abstract method')
 
-    def push_task(self, queue, message):
-        """Push a task message onto a named task queue.
-
-        Must be implemented by each broker implementation. Not normally called
-        by user code.
+    def enqueue_task(self, queue, message):
+        """Enqueue a task message onto a named task queue.
 
         :param queue: Queue name.
         :param message: Serialized task message.
         """
         raise NotImplementedError('abstract method')
 
-    def set_result_message(self, task_id, message, timeout):
+
+class AbstractResultStore(object):
+    """Result store abstract base class
+
+    :param url: URL used to identify the queue.
+    """
+
+    def __init__(self, url):
+        self.url = url
+
+    def deferred_result(self, task_id):
+        """Return a DeferredResult object for the given task id"""
+        return DeferredResult(self, task_id)
+
+    def pop(self, task_id):
+        """Pop and deserialize the result object for the given task id"""
+        message = self.pop_result(task_id)
+        if message is None:
+            return None
+        return loads(message)
+
+    def set_result(self, task_id, message, timeout):
         """Persist serialized result message.
 
         Must be implemented by each broker implementation. Not normally called
         by user code.
 
         :param task_id: Unique task identifier string.
-        :param message: Serialized task message.
+        :param message: Serialized result message.
         :param timeout: Number of seconds to persist the result before
             discarding it.
         """
         raise NotImplementedError('abstract method')
 
-    def pop_result_message(self, task_id):
+    def pop_result(self, task_id):
         """Pop serialized result message from persistent storage.
 
         Must be implemented by each broker implementation. Not normally called
@@ -164,8 +188,8 @@ class AbstractBroker(object):
         """
         raise NotImplementedError('abstract method')
 
-    def update_results(self, taskset_id, num_tasks, message, timeout):
-        """Update the result set, returning all results if complete
+    def update(self, taskset_id, num_tasks, message, timeout):
+        """Update the result set for a task set, return all results if complete
 
         Must be implemented by each broker implementation. Not normally called
         by user code. This operation is atomic, meaning that only one caller
@@ -174,7 +198,7 @@ class AbstractBroker(object):
         :param taskset_id: (string) The taskset unique identifier.
         :param num_tasks: (int) Number of tasks in the set.
         :param message: (string) A serialized result object to add to the
-            list of results.
+            set of results.
         :param timeout: (int) Discard results after this number of seconds.
         :returns: None if the number of updates has not reached num_tasks.
             Otherwise return an unordered list of serialized result messages.
@@ -249,15 +273,15 @@ class DeferredResult(object):
     - error: Set if the task completed with an error.
     """
 
-    def __init__(self, broker, task_id):
-        self.broker = broker
+    def __init__(self, store, task_id):
+        self.store = store
         self.task_id = task_id
         self.completed = False
 
     def __nonzero__(self):
         """Return True if the result has arrived, otherwise False."""
         if not self.completed:
-            result = self.broker.pop_result(self.task_id)
+            result = self.store.pop(self.task_id)
             if result is None:
                 return False
             self.completed = True
