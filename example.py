@@ -11,7 +11,13 @@ test_urls = [
     'redis://localhost:16379/0', # NOTE non-standard port
 ]
 
+def example(func):
+    example.s.append(func)
+    return func
+example.s = []
 
+
+@example
 def simple(url, run_worker):
     state = []
 
@@ -31,6 +37,7 @@ def simple(url, run_worker):
         eventually((lambda:state), ['arg'])
 
 
+@example
 def expose_method(url, run_worker):
 
     class Database(object):
@@ -58,6 +65,7 @@ def expose_method(url, run_worker):
         eventually((lambda:db.value), 2)
 
 
+@example
 def busy_wait(url, run_worker):
 
     def func(arg):
@@ -77,6 +85,7 @@ def busy_wait(url, run_worker):
         eq_(res.value, 'arg')
 
 
+@example
 def no_such_task(url, run_worker):
 
     broker = Broker(url)
@@ -88,11 +97,13 @@ def no_such_task(url, run_worker):
         res = Task(q.func, result_timeout=3)('arg')
         assert res.wait(poll_interval=0)
 
-        eq_(repr(res), "<DeferredResult no such task 'func' in default queue>")
-        assert hasattr(res, 'error'), repr(res)
+        tid = res.task_id
+        eq_(repr(res), '<DeferredResult no such task: func [default:%s]>' % tid)
+        eq_(res.error, 'no such task: func [default:%s]' % tid)
         assert not hasattr(res, 'value'), repr(res)
 
 
+@example
 def worker_interrupted(url, run_worker):
 
     def func(arg):
@@ -109,10 +120,11 @@ def worker_interrupted(url, run_worker):
         assert res.wait(poll_interval=0)
 
         eq_(repr(res), "<DeferredResult interrupted>")
-        assert hasattr(res, 'error'), repr(res)
+        eq_(res.error, 'interrupted')
         assert not hasattr(res, 'value'), repr(res)
 
 
+@example
 def task_error(url, run_worker):
 
     def func(arg):
@@ -129,19 +141,18 @@ def task_error(url, run_worker):
         assert res.wait(poll_interval=0)
 
         eq_(repr(res), "<DeferredResult Exception: fail!>")
-        assert hasattr(res, 'error'), repr(res)
+        eq_(res.error, 'Exception: fail!')
         assert not hasattr(res, 'value'), repr(res)
 
 
+@example
 def taskset(url, run_worker):
 
     def func(arg):
         return arg
-    def get_number(num):
-        return num
 
     broker = Broker(url, 'not-the-default-queue')
-    broker.expose(get_number)
+    broker.expose(func)
     broker.expose(sum)
     with run_worker(broker):
 
@@ -150,13 +161,14 @@ def taskset(url, run_worker):
 
         tasks = TaskSet(result_timeout=5)
         for n in [1, 2, 3]:
-            tasks.add(q.get_number, n)
+            tasks.add(q.func, n)
         res = tasks(q.sum)
 
         assert res is not None
         eventually((lambda: res.value if res else None), 6)
 
 
+@example
 def exception_in_task(url, run_worker):
     state = []
 
@@ -179,6 +191,7 @@ def exception_in_task(url, run_worker):
         eventually((lambda: state), [1])
 
 
+@example
 def task_namespaces(url, run_worker):
     state = []
     __name__ = 'module.path'
@@ -206,6 +219,7 @@ def task_namespaces(url, run_worker):
         eventually((lambda:len(state) == 2 and state), ['foo', 1])
 
 
+@example
 def more_namespaces(url, run_worker):
     state = []
 
@@ -253,23 +267,10 @@ def more_namespaces(url, run_worker):
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # testing helpers
 
-examples = [
-    simple,
-    expose_method,
-    busy_wait,
-    no_such_task,
-    worker_interrupted,
-    task_error,
-    taskset,
-    exception_in_task,
-    task_namespaces,
-    more_namespaces,
-]
-
 def test_examples():
     for url in test_urls:
-        for example in examples:
-            yield example, url, thread_worker
+        for test in example.s:
+            yield test, url, thread_worker
 
 @contextmanager
 def thread_worker(broker):

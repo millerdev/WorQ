@@ -80,7 +80,8 @@ class Broker(object):
             try:
                 task = self.tasks[task_name]
             except KeyError:
-                result = 'no such task %r in %s queue' % (task_name, queue)
+                result = 'no such task: %s [%s:%s]' \
+                    % (task_name, queue, task_id)
                 log.error(result)
             else:
                 result = task(*args, **kw)
