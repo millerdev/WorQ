@@ -1,4 +1,5 @@
 import logging
+import time
 from collections import defaultdict
 from pickle import dumps, loads
 from uuid import uuid4
@@ -243,7 +244,7 @@ class Queue(object):
 
 class Task(object):
 
-    def __init__(self, queue, options={}):
+    def __init__(self, queue, **options):
         self.queue = queue
         self.name = queue._Queue__namespace
         self.options = options
@@ -258,7 +259,7 @@ class Task(object):
             self.queue._Queue__name, id, self.name, args, kw, self.options)
 
     def with_options(self, **options):
-        return Task(self.queue, options)
+        return Task(self.queue, **options)
 
     def __repr__(self):
         return '<Task %s %s>' % (self.queue._Queue__name, self.name)
@@ -269,14 +270,33 @@ class DeferredResult(object):
 
     Meaningful attributes:
     - value: The result value. This is set when evaluating the boolean value of
-        the DeferredResult object after the task returns successfully.
-    - error: Set if the task completed with an error.
+        the DeferredResult object after the task returns successfully. This
+        attribute will be missing if the task raises an error.
+    - error: Set if the task completed with an error. This attribute will be
+        missing if the task completed successfully.
     """
 
     def __init__(self, store, task_id):
         self.store = store
         self.task_id = task_id
         self.completed = False
+
+    def wait(self, timeout=None, poll_interval=1):
+        """Wait for task result.
+
+        :param timeout: Number of seconds to wait. Wait forever if not given.
+        :param poll_interval: Number of seconds to sleep between polling the
+            result store.
+        :returns: True if the task completed, otherwise False.
+        """
+        if timeout is None:
+            while not self:
+                time.sleep(poll_interval)
+        else:
+            end = time.time() + timeout
+            while not self and end > time.time():
+                time.sleep(poll_interval)
+        return self.completed
 
     def __nonzero__(self):
         """Return True if the result has arrived, otherwise False."""

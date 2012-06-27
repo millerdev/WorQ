@@ -3,7 +3,7 @@ import logging
 import time
 from contextlib import contextmanager
 from threading import Thread
-from pymq import Broker, Queue, TaskSet, TaskSpace
+from pymq import Broker, Queue, Task, TaskSet, TaskSpace
 
 log = logging.getLogger(__name__)
 test_urls = [
@@ -56,6 +56,25 @@ def expose_method(url, run_worker):
         q.update_value(2)
 
         eventually((lambda:db.value), 2)
+
+
+def busy_wait(url, run_worker):
+
+    def func(arg):
+        return arg
+
+    broker = Broker(url)
+    broker.expose(func)
+    with run_worker(broker):
+
+        # -- task-invoking code, usually another process --
+        q = Queue(url)
+
+        res = Task(q.func, result_timeout=3)('arg')
+        wait_result = res.wait(timeout=1, poll_interval=0.1)
+
+        eq_(wait_result, True)
+        eq_(res.value, 'arg')
 
 
 def taskset(url, run_worker):
@@ -181,6 +200,7 @@ def more_namespaces(url, run_worker):
 examples = [
     simple,
     expose_method,
+    busy_wait,
     taskset,
     exception_in_task,
     task_namespaces,
