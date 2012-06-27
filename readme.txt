@@ -7,5 +7,4 @@ TODO
         - abort if "processing"
         - set "processing" (with timeout?)
         - push task id to "processing" queue
-- Wait for task (polling?)
 - Worker pool

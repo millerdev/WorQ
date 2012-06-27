@@ -71,10 +71,66 @@ def busy_wait(url, run_worker):
         q = Queue(url)
 
         res = Task(q.func, result_timeout=3)('arg')
-        wait_result = res.wait(timeout=1, poll_interval=0.1)
+        wait_result = res.wait(timeout=1, poll_interval=0)
 
         eq_(wait_result, True)
         eq_(res.value, 'arg')
+
+
+def no_such_task(url, run_worker):
+
+    broker = Broker(url)
+    with run_worker(broker):
+
+        # -- task-invoking code, usually another process --
+        q = Queue(url)
+
+        res = Task(q.func, result_timeout=3)('arg')
+        assert res.wait(poll_interval=0)
+
+        eq_(repr(res), "<DeferredResult no such task 'func' in default queue>")
+        assert hasattr(res, 'error'), repr(res)
+        assert not hasattr(res, 'value'), repr(res)
+
+
+def worker_interrupted(url, run_worker):
+
+    def func(arg):
+        raise KeyboardInterrupt()
+
+    broker = Broker(url)
+    broker.expose(func)
+    with run_worker(broker):
+
+        # -- task-invoking code, usually another process --
+        q = Queue(url)
+
+        res = Task(q.func, result_timeout=3)('arg')
+        assert res.wait(poll_interval=0)
+
+        eq_(repr(res), "<DeferredResult interrupted>")
+        assert hasattr(res, 'error'), repr(res)
+        assert not hasattr(res, 'value'), repr(res)
+
+
+def task_error(url, run_worker):
+
+    def func(arg):
+        raise Exception('fail!')
+
+    broker = Broker(url)
+    broker.expose(func)
+    with run_worker(broker):
+
+        # -- task-invoking code, usually another process --
+        q = Queue(url)
+
+        res = Task(q.func, result_timeout=3)('arg')
+        assert res.wait(poll_interval=0)
+
+        eq_(repr(res), "<DeferredResult Exception: fail!>")
+        assert hasattr(res, 'error'), repr(res)
+        assert not hasattr(res, 'value'), repr(res)
 
 
 def taskset(url, run_worker):
@@ -201,6 +257,9 @@ examples = [
     simple,
     expose_method,
     busy_wait,
+    no_such_task,
+    worker_interrupted,
+    task_error,
     taskset,
     exception_in_task,
     task_namespaces,

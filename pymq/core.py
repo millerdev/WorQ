@@ -75,21 +75,27 @@ class Broker(object):
             log.error('cannot load task message: %s', message, exc_info=True)
             return
         log.debug('task %s [%s:%s]', task_name, queue, task_id)
+        error = True
         try:
-            error = True
-            result = None
             try:
                 task = self.tasks[task_name]
             except KeyError:
-                log.error('no such task %r in queue %r', task_name, queue)
-                return
-            try:
+                result = 'no such task %r in %s queue' % (task_name, queue)
+                log.error(result)
+            else:
                 result = task(*args, **kw)
                 error = False
-            except (StopBroker, KeyboardInterrupt):
-                raise
-            except:
-                log.error('%r task failed:', task_name, exc_info=True)
+        except StopBroker:
+            result = 'worker stopped'
+            raise
+        except KeyboardInterrupt:
+            result = 'interrupted'
+            error = True
+            raise
+        except BaseException, err:
+            log.error('task failed: %s', task_name, exc_info=True)
+            result = '%s: %s' % (type(err).__name__, err)
+            error = True
         finally:
             if 'taskset' in options:
                 self.process_taskset(queue, options['taskset'], result)
@@ -271,9 +277,9 @@ class DeferredResult(object):
     Meaningful attributes:
     - value: The result value. This is set when evaluating the boolean value of
         the DeferredResult object after the task returns successfully. This
-        attribute will be missing if the task raises an error.
-    - error: Set if the task completed with an error. This attribute will be
-        missing if the task completed successfully.
+        attribute will not be set if the task completes with an error.
+    - error: A string describing the error, if any. This attribute will not be
+        set if the task completes successfully.
     """
 
     def __init__(self, store, task_id):
@@ -282,11 +288,15 @@ class DeferredResult(object):
         self.completed = False
 
     def wait(self, timeout=None, poll_interval=1):
-        """Wait for task result.
+        """Wait for the task result.
 
-        :param timeout: Number of seconds to wait. Wait forever if not given.
+        This method polls the result store. Use carefully. A task calling this
+        method (waiting on the result of a task being executed by the
+        same group of workers as the waiting task) may result in dead lock.
+
+        :param timeout: Number of seconds to wait. Wait forever by default.
         :param poll_interval: Number of seconds to sleep between polling the
-            result store.
+            result store. Default 1 second.
         :returns: True if the task completed, otherwise False.
         """
         if timeout is None:
@@ -315,7 +325,7 @@ class DeferredResult(object):
     def __repr__(self):
         if self:
             if hasattr(self, 'error'):
-                value = 'task failed'
+                value = self.error
             else:
                 value = 'value=%r' % (self.value,)
         else:
