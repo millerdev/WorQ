@@ -3,7 +3,7 @@ import logging
 import time
 from contextlib import contextmanager
 from threading import Thread
-from pymq import get_broker, Queue, Task, TaskSet, TaskError, TaskSpace
+from pymq import get_broker, Queue, Task, TaskSet, TaskFailure, TaskSpace
 
 log = logging.getLogger(__name__)
 test_urls = [
@@ -97,13 +97,13 @@ def no_such_task(url, run_worker):
         q = Queue(url)
 
         res = Task(q.func, result_timeout=3)('arg')
-        tid = res.task_id
 
         completed = res.wait(timeout=1, poll_interval=0)
 
         assert completed, repr(res)
-        eq_(repr(res), '<DeferredResult no such task: func [default:%s]>' % tid)
-        with assert_raises(TaskError, 'no such task: func [default:%s]' % tid):
+        err = 'no such task: func [default:%s]' % res.task_id
+        eq_(repr(res), '<DeferredResult %s>' % err)
+        with assert_raises(TaskFailure, err):
             res.value
 
 
@@ -125,7 +125,7 @@ def worker_interrupted(url, run_worker):
 
         assert completed, repr(res)
         eq_(repr(res), '<DeferredResult KeyboardInterrupt: >')
-        with assert_raises(TaskError, 'KeyboardInterrupt: '):
+        with assert_raises(TaskFailure, 'KeyboardInterrupt: '):
             res.value
 
 
@@ -147,7 +147,7 @@ def task_error(url, run_worker):
 
         assert completed, repr(res)
         eq_(repr(res), "<DeferredResult Exception: fail!>")
-        with assert_raises(TaskError, 'Exception: fail!'):
+        with assert_raises(TaskFailure, 'Exception: fail!'):
             res.value
 
 
@@ -170,7 +170,6 @@ def taskset(url, run_worker):
             tasks.add(q.func, n)
         res = tasks(q.sum)
 
-        assert res is not None
         eventually((lambda: res.value if res else None), 6)
 
 
@@ -224,7 +223,7 @@ def taskset_with_errors(url, run_worker):
         res = tasks(q.func)
         res.wait(timeout=1, poll_interval=0)
 
-        eq_(res.value, [1, TaskError('Exception: zero fail!'), 2])
+        eq_(res.value, [1, TaskFailure('Exception: zero fail!'), 2])
 
 
 @example
@@ -286,12 +285,12 @@ def more_namespaces(url, run_worker):
     with run_worker(broker):
 
         # -- task-invoking code, usually another process --
-        foo = Queue(url, 'foo')
+        q = Queue(url)
 
-        foo.join(1)
-        foo.bar.kick(2)
-        foo.bar.baz.join(3)
-        foo.bar.baz.kick(4)
+        q.foo.join(1)
+        q.foo.bar.kick(2)
+        q.foo.bar.baz.join(3)
+        q.foo.bar.baz.kick(4)
 
         eventually((lambda:len(state) == 4 and state), [
             'foo-join 1',

@@ -85,22 +85,22 @@ class Broker(object):
             try:
                 task = self.tasks[task_name]
             except KeyError:
-                result = TaskError('no such task: %s [%s:%s]'
+                result = TaskFailure('no such task: %s [%s:%s]'
                     % (task_name, queue, task_id))
                 log.error(result)
             else:
                 result = task(*args, **kw)
         except _StopWorker:
-            result = TaskError('worker stopped')
+            result = TaskFailure('worker stopped')
             raise
         except Exception, err:
             log.error('task failed: %s [%s:%s]',
                 task_name, queue, task_id, exc_info=True)
-            result = TaskError('%s: %s' % (type(err).__name__, err))
+            result = TaskFailure('%s: %s' % (type(err).__name__, err))
         except BaseException, err:
             log.error('worker died in task: %s [%s:%s]',
                 task_name, queue, task_id, exc_info=True)
-            result = TaskError('%s: %s' % (type(err).__name__, err))
+            result = TaskFailure('%s: %s' % (type(err).__name__, err))
             raise
         finally:
             if 'taskset' in options:
@@ -281,10 +281,10 @@ class Task(object):
         return '<Task %s [%s]>' % (self.name, self.queue._Queue__name)
 
 
-class TaskError(Exception):
+class TaskFailure(Exception):
 
     def __eq__(self, other):
-        return isinstance(other, TaskError) and str(self) == str(other)
+        return isinstance(other, TaskFailure) and str(self) == str(other)
 
     def __ne__(self, other):
         return not self.__eq__(other)
@@ -296,7 +296,7 @@ class DeferredResult(object):
     Meaningful attributes:
     - value: The result value. This is set when evaluating the boolean value of
       the DeferredResult object after the task completes. The value of this
-      attribute will be an instance of TaskError if the task could not be
+      attribute will be an instance of TaskFailure if the task could not be
       invoked or raised an error.
     """
 
@@ -310,10 +310,10 @@ class DeferredResult(object):
         """Get the value returned by the task (if completed)
 
         :returns: The value returned by the task if it completed successfully.
-        :raises: AttributeError if the task has not yet completed. TaskError
+        :raises: AttributeError if the task has not yet completed. TaskFailure
             if the task could not be invoked or raised an error.
         """
-        if isinstance(self._value, TaskError):
+        if isinstance(self._value, TaskFailure):
             raise self._value
         return self._value
 
@@ -351,7 +351,7 @@ class DeferredResult(object):
 
     def __repr__(self):
         if self:
-            if isinstance(self._value, TaskError):
+            if isinstance(self._value, TaskFailure):
                 value = self._value
             else:
                 value = 'value=%r' % (self.value,)
