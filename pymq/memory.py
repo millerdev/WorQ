@@ -1,4 +1,4 @@
-"""In-memory queue broker, normally used for testing."""
+"""In-memory message queue and result store, normally used for testing."""
 import logging
 from pymq.core import AbstractMessageQueue, AbstractResultStore, DEFAULT
 from Queue import Queue
@@ -49,6 +49,7 @@ class MemoryResults(AbstractResultStore):
         super(MemoryResults, self).__init__(*args, **kw)
         self.results_by_task = WeakValueDictionary()
         self.results = WeakKeyDictionary()
+        self.tasksets = {}
 
     def deferred_result(self, task_id):
         result = self.results_by_task.get(task_id)
@@ -66,13 +67,8 @@ class MemoryResults(AbstractResultStore):
         return self.results.pop(result_obj, None)
 
     def update(self, taskset_id, num, message, timeout):
-        # not thread-safe
-        result = self.deferred_result(taskset_id)
-        key = getattr(result, 'taskset_results_key', None)
-        if key is None:
-            key = type('TaskSet-%s' % taskset_id, (object,), {})
-            result.taskset_results_key = key
-        value = self.results.setdefault(key, [])
+        # not thread-safe and leaks memory if a taskset is not completed
+        value = self.tasksets.setdefault(taskset_id, [])
         value.append(message)
         if len(value) == num:
-            return self.results.pop(key)
+            return self.tasksets.pop(taskset_id)

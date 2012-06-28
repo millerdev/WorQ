@@ -169,6 +169,34 @@ def taskset(url, run_worker):
 
 
 @example
+def taskset_composition(url, run_worker):
+
+    def func(arg):
+        return arg
+
+    broker = Broker(url)
+    broker.expose(func)
+    broker.expose(sum)
+    with run_worker(broker):
+
+        # -- task-invoking code, usually another process --
+        q = Queue(url)
+
+        set_0 = TaskSet()
+        for n in [1, 2, 3]:
+            set_0.add(q.func, n)
+
+        set_1 = TaskSet(result_timeout=5)
+        set_1.add(set_0, q.sum)
+        for n in [4, 5]:
+            set_1.add(q.func, n)
+
+        res = set_1(q.sum)
+
+        eventually((lambda: res.value if res else None), 15)
+
+
+@example
 def exception_in_task(url, run_worker):
     state = []
 

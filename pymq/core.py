@@ -11,6 +11,7 @@ log = logging.getLogger(__name__)
 class Broker(object):
 
     default_result_timeout = 60 * 60 * 24 # one day
+    task_options = set(['result_timeout', 'taskset'])
 
     def __init__(self, message_queue, result_store):
         self.messages = message_queue
@@ -60,6 +61,10 @@ class Broker(object):
         return Queue(self, namespace, name=name)
 
     def enqueue(self, queue, task_id, task_name, args, kw, options):
+        unknown_options = set(options) - self.task_options
+        if unknown_options:
+            raise ValueError('unrecognized task options: %s'
+                % ', '.join(unknown_options))
         message = dumps((task_id, task_name, args, kw, options))
         if options.get('result_timeout') is not None:
             result = self.results.deferred_result(task_id)
@@ -265,11 +270,11 @@ class Task(object):
         return self.queue._Queue__broker.enqueue(
             self.queue._Queue__name, id, self.name, args, kw, self.options)
 
-    def with_options(self, **options):
+    def with_options(self, options):
         return Task(self.queue, **options)
 
     def __repr__(self):
-        return '<Task %s %s>' % (self.queue._Queue__name, self.name)
+        return '<Task %s [%s]>' % (self.name, self.queue._Queue__name)
 
 
 class DeferredResult(object):
@@ -361,12 +366,10 @@ class TaskSet(object):
       if the taskset fails to complete for whatever reason.
     """
 
-    def __init__(self, result_timeout=None):
+    def __init__(self, **options):
         self.queue = None
         self.tasks = []
-        self.options = {}
-        if result_timeout is not None:
-            self.options['result_timeout'] = result_timeout
+        self.options = options
 
     def add(*self_task_args, **kw):
         """Add a task to the set
@@ -379,7 +382,9 @@ class TaskSet(object):
             raise ValueError('expected at least two positional '
                 'arguments, got %s' % len(self_task_args))
         self = self_task_args[0]
-        task = Task(self_task_args[1])
+        task = self_task_args[1]
+        if isinstance(task, Queue):
+            task = Task(task)
         args = self_task_args[2:]
         if self.queue is None:
             self.queue = task.queue
@@ -388,6 +393,12 @@ class TaskSet(object):
                 '%s != %s' % (self.queue, task.queue))
         self.tasks.append((task, args, kw))
 
+    def with_options(self, options):
+        ts = TaskSet(**options)
+        ts.queue = self.queue
+        ts.tasks = list(self.tasks)
+        return ts
+
     def __call__(*self_task_args, **kw):
         """Invoke the taskset
 
@@ -395,8 +406,8 @@ class TaskSet(object):
             of results from all other tasks in the set as its first argument.
         :params *args: Extra positional arguments to use when invoking the task.
         :params **kw: Keyword arguments to use when invoking the task.
-        :returns: None if the TaskSet was created with `result_timeout=None`.
-            Otherwise, a DeferredResult object.
+        :returns: DeferredResult if the TaskSet was created with a
+            `result_timeout`. Otherwise, None.
         """
         TaskSet.add(*self_task_args, **kw)
         self = self_task_args[0]
@@ -410,7 +421,7 @@ class TaskSet(object):
         options = {'taskset':
             (taskset_id, task.name, args, kw, self.options, num)}
         for t, a, k in self.tasks:
-            t.with_options(**options)(*a, **k)
+            t.with_options(options)(*a, **k)
         return result
 
 
