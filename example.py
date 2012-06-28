@@ -31,9 +31,8 @@ def simple(url, run_worker):
         # -- task-invoking code, usually another process --
         q = Queue(url)
 
-        res = q.func('arg')
+        q.func('arg')
 
-        eq_(res, None)
         eventually((lambda:state), ['arg'])
 
 
@@ -78,7 +77,9 @@ def busy_wait(url, run_worker):
         # -- task-invoking code, usually another process --
         q = Queue(url)
 
-        res = Task(q.func, result_timeout=3)('arg')
+        func_task = Task(q.func, result_timeout=3)
+        res = func_task('arg')
+
         wait_result = res.wait(timeout=1, poll_interval=0)
 
         assert wait_result, repr(res)
@@ -187,9 +188,9 @@ def taskset_composition(url, run_worker):
             set_0.add(q.func, n)
 
         set_1 = TaskSet(result_timeout=5)
+        set_1.add(q.func, 4)
         set_1.add(set_0, q.sum)
-        for n in [4, 5]:
-            set_1.add(q.func, n)
+        set_1.add(q.func, 5)
 
         res = set_1(q.sum)
 
