@@ -3,7 +3,7 @@ import logging
 import time
 from contextlib import contextmanager
 from threading import Thread
-from pymq import Broker, Queue, Task, TaskSet, TaskSpace
+from pymq import Broker, Queue, Task, TaskSet, TaskError, TaskSpace
 
 log = logging.getLogger(__name__)
 test_urls = [
@@ -80,10 +80,11 @@ def busy_wait(url, run_worker):
         func_task = Task(q.func, result_timeout=3)
         res = func_task('arg')
 
-        wait_result = res.wait(timeout=1, poll_interval=0)
+        completed = res.wait(timeout=1, poll_interval=0)
 
-        assert wait_result, repr(res)
+        assert completed, repr(res)
         eq_(res.value, 'arg')
+        eq_(repr(res), "<DeferredResult value='arg'>")
 
 
 @example
@@ -96,12 +97,17 @@ def no_such_task(url, run_worker):
         q = Queue(url)
 
         res = Task(q.func, result_timeout=3)('arg')
-        res.wait(timeout=1, poll_interval=0)
-
         tid = res.task_id
+
+        try:
+            res.wait(timeout=1, poll_interval=0)
+        except TaskError, err:
+            eq_(str(err), 'no such task: func [default:%s]' % tid)
+        else:
+            assert 0, 'TaskError not raised'
+
         eq_(repr(res), '<DeferredResult no such task: func [default:%s]>' % tid)
-        eq_(res.error, 'no such task: func [default:%s]' % tid)
-        assert not hasattr(res, 'value'), repr(res)
+        eq_(res.value, TaskError('no such task: func [default:%s]' % tid))
 
 
 @example
@@ -118,11 +124,15 @@ def worker_interrupted(url, run_worker):
         q = Queue(url)
 
         res = Task(q.func, result_timeout=3)('arg')
-        res.wait(timeout=1, poll_interval=0)
+        try:
+            res.wait(timeout=1, poll_interval=0)
+        except TaskError, err:
+            eq_(str(err), 'interrupted')
+        else:
+            assert 0, 'TaskError not raised'
 
         eq_(repr(res), "<DeferredResult interrupted>")
-        eq_(res.error, 'interrupted')
-        assert not hasattr(res, 'value'), repr(res)
+        eq_(res.value, TaskError('interrupted'))
 
 
 @example
@@ -139,11 +149,15 @@ def task_error(url, run_worker):
         q = Queue(url)
 
         res = Task(q.func, result_timeout=3)('arg')
-        res.wait(timeout=1, poll_interval=0)
+        try:
+            res.wait(timeout=1, poll_interval=0)
+        except TaskError, err:
+            eq_(str(err), 'Exception: fail!')
+        else:
+            assert 0, 'TaskError not raised'
 
         eq_(repr(res), "<DeferredResult Exception: fail!>")
-        eq_(res.error, 'Exception: fail!')
-        assert not hasattr(res, 'value'), repr(res)
+        eq_(res.value, TaskError('Exception: fail!'))
 
 
 @example
@@ -198,7 +212,32 @@ def taskset_composition(url, run_worker):
 
 
 @example
-def exception_in_task(url, run_worker):
+def taskset_with_errors(url, run_worker):
+
+    def func(arg):
+        if arg == 0:
+            raise Exception('zero fail!')
+        return arg
+
+    broker = Broker(url)
+    broker.expose(func)
+    with run_worker(broker):
+
+        # -- task-invoking code, usually another process --
+        q = Queue(url)
+
+        tasks = TaskSet(result_timeout=5)
+        tasks.add(q.func, 1)
+        tasks.add(q.func, 0)
+        tasks.add(q.func, 2)
+        res = tasks(q.func)
+        res.wait(timeout=1, poll_interval=0)
+
+        eq_(res.value, [1, TaskError('Exception: zero fail!'), 2])
+
+
+@example
+def task_systemexit(url, run_worker):
     state = []
 
     def bad():

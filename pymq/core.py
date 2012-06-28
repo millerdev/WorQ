@@ -81,35 +81,31 @@ class Broker(object):
             log.error('cannot load task message: %s', message, exc_info=True)
             return
         log.debug('invoke %s [%s:%s]', task_name, queue, task_id)
-        error = True
         try:
             try:
                 task = self.tasks[task_name]
             except KeyError:
-                result = 'no such task: %s [%s:%s]' \
-                    % (task_name, queue, task_id)
+                result = TaskError('no such task: %s [%s:%s]'
+                    % (task_name, queue, task_id))
                 log.error(result)
             else:
                 result = task(*args, **kw)
-                error = False
         except StopBroker:
-            result = 'worker stopped'
+            result = TaskError('worker stopped')
             raise
         except KeyboardInterrupt:
-            result = 'interrupted'
-            error = True
+            result = TaskError('interrupted')
             raise
         except BaseException, err:
             log.error('task failed: %s', task_name, exc_info=True)
-            result = '%s: %s' % (type(err).__name__, err)
-            error = True
+            result = TaskError('%s: %s' % (type(err).__name__, err))
         finally:
             if 'taskset' in options:
                 self.process_taskset(queue, options['taskset'], result)
             else:
                 timeout = options.get('result_timeout')
                 if timeout is not None:
-                    message = dumps((error, result))
+                    message = dumps([result])
                     self.results.set_result(task_id, message, timeout)
 
     def process_taskset(self, queue, taskset, result):
@@ -282,21 +278,29 @@ class Task(object):
         return '<Task %s [%s]>' % (self.name, self.queue._Queue__name)
 
 
+class TaskError(Exception):
+
+    def __eq__(self, other):
+        return isinstance(other, TaskError) and str(self) == str(other)
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
+
+
 class DeferredResult(object):
     """Deferred result object
 
     Meaningful attributes:
     - value: The result value. This is set when evaluating the boolean value of
-        the DeferredResult object after the task returns successfully. This
-        attribute will not be set if the task completes with an error.
-    - error: A string describing the error, if any. This attribute will not be
-        set if the task completes successfully.
+      the DeferredResult object after the task completes. The value of this
+      attribute will be an instance of TaskError if the task could not be
+      invoked or raised an error.
     """
 
     def __init__(self, store, task_id):
         self.store = store
         self.task_id = task_id
-        self.completed = False
+        self._completed = False
 
     def wait(self, timeout=None, poll_interval=1):
         """Wait for the task result.
@@ -308,7 +312,8 @@ class DeferredResult(object):
         :param timeout: Number of seconds to wait. Wait forever by default.
         :param poll_interval: Number of seconds to sleep between polling the
             result store. Default 1 second.
-        :returns: True if the task completed, otherwise False.
+        :returns: True if the task completed successfully, otherwise False.
+        :raises: TaskError if the task could not be invoked or raised an error.
         """
         if timeout is None:
             while not self:
@@ -317,26 +322,25 @@ class DeferredResult(object):
             end = time.time() + timeout
             while not self and end > time.time():
                 time.sleep(poll_interval)
-        return self.completed
+        if self._completed and isinstance(self.value, TaskError):
+            raise self.value
+        return self._completed
 
     def __nonzero__(self):
         """Return True if the result has arrived, otherwise False."""
-        if not self.completed:
-            result = self.store.pop(self.task_id)
-            if result is None:
+        if not self._completed:
+            value = self.store.pop(self.task_id)
+            if value is None:
                 return False
-            self.completed = True
-            error, value = result
-            if error:
-                self.error = value
-            else:
-                self.value = value
+            assert len(value) == 1, value
+            self.value = value[0]
+            self._completed = True
         return True
 
     def __repr__(self):
         if self:
-            if hasattr(self, 'error'):
-                value = self.error
+            if isinstance(self.value, TaskError):
+                value = self.value
             else:
                 value = 'value=%r' % (self.value,)
         else:
