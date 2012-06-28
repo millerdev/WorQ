@@ -127,12 +127,12 @@ def worker_interrupted(url, run_worker):
         try:
             res.wait(timeout=1, poll_interval=0)
         except TaskError, err:
-            eq_(str(err), 'interrupted')
+            eq_(str(err), 'KeyboardInterrupt: ')
         else:
             assert 0, 'TaskError not raised'
 
-        eq_(repr(res), "<DeferredResult interrupted>")
-        eq_(res.value, TaskError('interrupted'))
+        eq_(repr(res), "<DeferredResult KeyboardInterrupt: >")
+        eq_(res.value, TaskError('KeyboardInterrupt: '))
 
 
 @example
@@ -234,29 +234,6 @@ def taskset_with_errors(url, run_worker):
         res.wait(timeout=1, poll_interval=0)
 
         eq_(res.value, [1, TaskError('Exception: zero fail!'), 2])
-
-
-@example
-def task_systemexit(url, run_worker):
-    state = []
-
-    def bad():
-        raise SystemExit('something bad happened')
-    def good(arg):
-        state.append(arg)
-
-    broker = Broker(url)
-    broker.expose(bad)
-    broker.expose(good)
-    with run_worker(broker):
-
-        # -- task-invoking code, usually another process --
-        q = Queue(url)
-
-        eq_(q.bad(), None)
-        eq_(q.good(1), None)
-
-        eventually((lambda: state), [1])
 
 
 @example

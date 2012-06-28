@@ -16,7 +16,7 @@ class Broker(object):
     def __init__(self, message_queue, result_store):
         self.messages = message_queue
         self.results = result_store
-        self.tasks = {stop_task.name: stop_task}
+        self.tasks = {_stop_task.name: _stop_task}
 
     def expose(self, obj):
         """Expose a TaskSpace or task callable to all queues.
@@ -41,8 +41,8 @@ class Broker(object):
         try:
             for queue, message in self.messages:
                 self.invoke(queue, message)
-        except StopBroker:
-            log.info('broker stopped')
+        except _StopWorker:
+            log.info('worker stopped')
 
     def stop(self):
         """Stop a random worker.
@@ -51,7 +51,7 @@ class Broker(object):
         what you expect in an environment with more than one worker.
         """
         queue = self.messages.stop_queue
-        self.enqueue(queue, 'stop', stop_task.name, (), {}, {})
+        self.enqueue(queue, 'stop', _stop_task.name, (), {}, {})
 
     def discard_pending_tasks(self):
         """Discard pending tasks from all queues"""
@@ -90,15 +90,18 @@ class Broker(object):
                 log.error(result)
             else:
                 result = task(*args, **kw)
-        except StopBroker:
+        except _StopWorker:
             result = TaskError('worker stopped')
             raise
-        except KeyboardInterrupt:
-            result = TaskError('interrupted')
-            raise
-        except BaseException, err:
-            log.error('task failed: %s', task_name, exc_info=True)
+        except Exception, err:
+            log.error('task failed: %s [%s:%s]',
+                task_name, queue, task_id, exc_info=True)
             result = TaskError('%s: %s' % (type(err).__name__, err))
+        except BaseException, err:
+            log.error('worker died in task: %s [%s:%s]',
+                task_name, queue, task_id, exc_info=True)
+            result = TaskError('%s: %s' % (type(err).__name__, err))
+            raise
         finally:
             if 'taskset' in options:
                 self.process_taskset(queue, options['taskset'], result)
@@ -464,8 +467,8 @@ class TaskSpace(object):
         return callable
 
 
-class StopBroker(BaseException): pass
+class _StopWorker(BaseException): pass
 
-def stop_task():
-    raise StopBroker()
-stop_task.name = '<stop_task>'
+def _stop_task():
+    raise _StopWorker()
+_stop_task.name = '<stop_task>'
