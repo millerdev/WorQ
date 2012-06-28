@@ -3,7 +3,7 @@ import logging
 import time
 from contextlib import contextmanager
 from threading import Thread
-from pymq import Broker, Queue, Task, TaskSet, TaskError, TaskSpace
+from pymq import get_broker, Queue, Task, TaskSet, TaskError, TaskSpace
 
 log = logging.getLogger(__name__)
 test_urls = [
@@ -24,7 +24,7 @@ def simple(url, run_worker):
     def func(arg):
         state.append(arg)
 
-    broker = Broker(url)
+    broker = get_broker(url)
     broker.expose(func)
     with run_worker(broker):
 
@@ -53,7 +53,7 @@ def expose_method(url, run_worker):
 
     db = Database()
     obj = TaskObj(db)
-    broker = Broker(url)
+    broker = get_broker(url)
     broker.expose(obj.update_value)
     with run_worker(broker):
 
@@ -70,7 +70,7 @@ def busy_wait(url, run_worker):
     def func(arg):
         return arg
 
-    broker = Broker(url)
+    broker = get_broker(url)
     broker.expose(func)
     with run_worker(broker):
 
@@ -90,7 +90,7 @@ def busy_wait(url, run_worker):
 @example
 def no_such_task(url, run_worker):
 
-    broker = Broker(url)
+    broker = get_broker(url)
     with run_worker(broker):
 
         # -- task-invoking code, usually another process --
@@ -116,7 +116,7 @@ def worker_interrupted(url, run_worker):
     def func(arg):
         raise KeyboardInterrupt()
 
-    broker = Broker(url)
+    broker = get_broker(url)
     broker.expose(func)
     with run_worker(broker):
 
@@ -141,7 +141,7 @@ def task_error(url, run_worker):
     def func(arg):
         raise Exception('fail!')
 
-    broker = Broker(url)
+    broker = get_broker(url)
     broker.expose(func)
     with run_worker(broker):
 
@@ -166,7 +166,7 @@ def taskset(url, run_worker):
     def func(arg):
         return arg
 
-    broker = Broker(url, 'not-the-default-queue')
+    broker = get_broker(url, 'not-the-default-queue')
     broker.expose(func)
     broker.expose(sum)
     with run_worker(broker):
@@ -189,7 +189,7 @@ def taskset_composition(url, run_worker):
     def func(arg):
         return arg
 
-    broker = Broker(url)
+    broker = get_broker(url)
     broker.expose(func)
     broker.expose(sum)
     with run_worker(broker):
@@ -219,7 +219,7 @@ def taskset_with_errors(url, run_worker):
             raise Exception('zero fail!')
         return arg
 
-    broker = Broker(url)
+    broker = get_broker(url)
     broker.expose(func)
     with run_worker(broker):
 
@@ -251,7 +251,7 @@ def task_namespaces(url, run_worker):
     def bar(arg):
         state.append(arg)
 
-    broker = Broker(url)
+    broker = get_broker(url)
     broker.expose(ts)
     with run_worker(broker):
 
@@ -288,7 +288,7 @@ def more_namespaces(url, run_worker):
     def kick(arg):
         state.append('baz-kick %s' % arg)
 
-    broker = Broker(url)
+    broker = get_broker(url)
     broker.expose(foo)
     broker.expose(bar)
     broker.expose(baz)

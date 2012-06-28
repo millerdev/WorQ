@@ -1,8 +1,7 @@
 # PyMQ implementation
 from __future__ import absolute_import
 from urlparse import urlparse
-from pymq.core import (DEFAULT, Broker as _Broker,
-    Task, TaskSet, TaskError, TaskSpace)
+from pymq.core import DEFAULT, Broker, Task, TaskSet, TaskError, TaskSpace
 from pymq.memory import MemoryQueue, MemoryResults
 from pymq.redis import RedisQueue, RedisResults
 
@@ -11,7 +10,7 @@ BROKER_REGISTRY = {
     'redis': (RedisQueue, RedisResults),
 }
 
-def Broker(url, *queues):
+def get_broker(url, *queues):
     """Create a new broker
 
     :param url: Message queue and result store URL (this convenience function
@@ -25,7 +24,7 @@ def Broker(url, *queues):
         raise ValueError('invalid broker URL: %s' % url)
     message_queue = make_queue(url, queues)
     result_store = make_results(url)
-    return _Broker(message_queue, result_store)
+    return Broker(message_queue, result_store)
 
 def Queue(url, namespace='', name=DEFAULT):
     """Get a queue object for invoking remote tasks
@@ -38,5 +37,5 @@ def Queue(url, namespace='', name=DEFAULT):
         named queue. Default value: 'default'.
     :returns: A Queue object.
     """
-    broker = Broker(url)
+    broker = get_broker(url)
     return broker.queue(namespace, name=name)
