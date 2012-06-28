@@ -99,15 +99,12 @@ def no_such_task(url, run_worker):
         res = Task(q.func, result_timeout=3)('arg')
         tid = res.task_id
 
-        try:
-            res.wait(timeout=1, poll_interval=0)
-        except TaskError, err:
-            eq_(str(err), 'no such task: func [default:%s]' % tid)
-        else:
-            assert 0, 'TaskError not raised'
+        completed = res.wait(timeout=1, poll_interval=0)
 
+        assert completed, repr(res)
         eq_(repr(res), '<DeferredResult no such task: func [default:%s]>' % tid)
-        eq_(res.value, TaskError('no such task: func [default:%s]' % tid))
+        with assert_raises(TaskError, 'no such task: func [default:%s]' % tid):
+            res.value
 
 
 @example
@@ -124,15 +121,12 @@ def worker_interrupted(url, run_worker):
         q = Queue(url)
 
         res = Task(q.func, result_timeout=3)('arg')
-        try:
-            res.wait(timeout=1, poll_interval=0)
-        except TaskError, err:
-            eq_(str(err), 'KeyboardInterrupt: ')
-        else:
-            assert 0, 'TaskError not raised'
+        completed = res.wait(timeout=1, poll_interval=0)
 
-        eq_(repr(res), "<DeferredResult KeyboardInterrupt: >")
-        eq_(res.value, TaskError('KeyboardInterrupt: '))
+        assert completed, repr(res)
+        eq_(repr(res), '<DeferredResult KeyboardInterrupt: >')
+        with assert_raises(TaskError, 'KeyboardInterrupt: '):
+            res.value
 
 
 @example
@@ -149,15 +143,12 @@ def task_error(url, run_worker):
         q = Queue(url)
 
         res = Task(q.func, result_timeout=3)('arg')
-        try:
-            res.wait(timeout=1, poll_interval=0)
-        except TaskError, err:
-            eq_(str(err), 'Exception: fail!')
-        else:
-            assert 0, 'TaskError not raised'
+        completed = res.wait(timeout=1, poll_interval=0)
 
+        assert completed, repr(res)
         eq_(repr(res), "<DeferredResult Exception: fail!>")
-        eq_(res.value, TaskError('Exception: fail!'))
+        with assert_raises(TaskError, 'Exception: fail!'):
+            res.value
 
 
 @example
@@ -341,6 +332,16 @@ def eventually(condition, value, timeout=1):
             eq_(result, value)
             return
     raise AssertionError('eventuality failed to occur: %r' % (value,))
+
+@contextmanager
+def assert_raises(exc_class, msg=None):
+    try:
+        yield
+    except exc_class as exc:
+        if msg is not None:
+            eq_(str(exc), msg)
+    else:
+        raise AssertionError('%s not raised' % exc_class.__name__)
 
 def eq_(value, other):
     assert value == other, '%r != %r' % (value, other)

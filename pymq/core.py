@@ -305,6 +305,18 @@ class DeferredResult(object):
         self.task_id = task_id
         self._completed = False
 
+    @property
+    def value(self):
+        """Get the value returned by the task (if completed)
+
+        :returns: The value returned by the task if it completed successfully.
+        :raises: AttributeError if the task has not yet completed. TaskError
+            if the task could not be invoked or raised an error.
+        """
+        if isinstance(self._value, TaskError):
+            raise self._value
+        return self._value
+
     def wait(self, timeout=None, poll_interval=1):
         """Wait for the task result.
 
@@ -315,8 +327,7 @@ class DeferredResult(object):
         :param timeout: Number of seconds to wait. Wait forever by default.
         :param poll_interval: Number of seconds to sleep between polling the
             result store. Default 1 second.
-        :returns: True if the task completed successfully, otherwise False.
-        :raises: TaskError if the task could not be invoked or raised an error.
+        :returns: True if the task completed, otherwise False.
         """
         if timeout is None:
             while not self:
@@ -325,8 +336,6 @@ class DeferredResult(object):
             end = time.time() + timeout
             while not self and end > time.time():
                 time.sleep(poll_interval)
-        if self._completed and isinstance(self.value, TaskError):
-            raise self.value
         return self._completed
 
     def __nonzero__(self):
@@ -336,14 +345,14 @@ class DeferredResult(object):
             if value is None:
                 return False
             assert len(value) == 1, value
-            self.value = value[0]
+            self._value = value[0]
             self._completed = True
         return True
 
     def __repr__(self):
         if self:
-            if isinstance(self.value, TaskError):
-                value = self.value
+            if isinstance(self._value, TaskError):
+                value = self._value
             else:
                 value = 'value=%r' % (self.value,)
         else:
