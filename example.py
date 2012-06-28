@@ -81,7 +81,7 @@ def busy_wait(url, run_worker):
         res = Task(q.func, result_timeout=3)('arg')
         wait_result = res.wait(timeout=1, poll_interval=0)
 
-        eq_(wait_result, True)
+        assert wait_result, repr(res)
         eq_(res.value, 'arg')
 
 
@@ -95,7 +95,7 @@ def no_such_task(url, run_worker):
         q = Queue(url)
 
         res = Task(q.func, result_timeout=3)('arg')
-        assert res.wait(poll_interval=0)
+        res.wait(timeout=1, poll_interval=0)
 
         tid = res.task_id
         eq_(repr(res), '<DeferredResult no such task: func [default:%s]>' % tid)
@@ -117,7 +117,7 @@ def worker_interrupted(url, run_worker):
         q = Queue(url)
 
         res = Task(q.func, result_timeout=3)('arg')
-        assert res.wait(poll_interval=0)
+        res.wait(timeout=1, poll_interval=0)
 
         eq_(repr(res), "<DeferredResult interrupted>")
         eq_(res.error, 'interrupted')
@@ -138,7 +138,7 @@ def task_error(url, run_worker):
         q = Queue(url)
 
         res = Task(q.func, result_timeout=3)('arg')
-        assert res.wait(poll_interval=0)
+        res.wait(timeout=1, poll_interval=0)
 
         eq_(repr(res), "<DeferredResult Exception: fail!>")
         eq_(res.error, 'Exception: fail!')
@@ -312,9 +312,9 @@ def thread_worker(broker):
     try:
         yield
     finally:
-        if t.is_alive():
-            broker.stop()
-            t.join()
+        broker.stop()
+        t.join()
+        broker.discard_pending_tasks()
 
 def eventually(condition, value, timeout=1):
     end = time.time() + timeout

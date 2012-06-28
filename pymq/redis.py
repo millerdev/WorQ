@@ -1,8 +1,11 @@
 """Redis queue broker."""
 from __future__ import absolute_import
+import logging
 import redis
 from urlparse import urlparse
 from pymq.core import AbstractMessageQueue, AbstractResultStore
+
+log = logging.getLogger(__name__)
 
 QUEUE_PATTERN = 'pymq:queue:%s'
 RESULT_PATTERN = 'pymq:result:%s'
@@ -35,15 +38,18 @@ class RedisQueue(RedisBackendMixin, AbstractMessageQueue):
     """Redis message queue"""
 
     def __iter__(self):
-        queue_names = [QUEUE_PATTERN % q for q in self.queues]
+        queue_keys = [QUEUE_PATTERN % q for q in self.queues]
         queue_trim = len(QUEUE_PATTERN % '')
         while True:
-            queue, message = self.redis.blpop(*queue_names)
+            queue, message = self.redis.blpop(queue_keys)
             yield (queue[queue_trim:], message)
 
     def enqueue_task(self, queue, message):
         key = QUEUE_PATTERN % queue
         self.redis.rpush(key, message)
+
+    def discard_pending(self):
+        self.redis.delete(*[QUEUE_PATTERN % q for q in self.queues])
 
 
 class RedisResults(RedisBackendMixin, AbstractResultStore):

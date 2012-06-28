@@ -1,7 +1,7 @@
 """In-memory message queue and result store, normally used for testing."""
 import logging
 from pymq.core import AbstractMessageQueue, AbstractResultStore, DEFAULT
-from Queue import Queue
+from Queue import Queue, Empty
 from weakref import WeakValueDictionary, WeakKeyDictionary
 
 log = logging.getLogger(__name__)
@@ -36,6 +36,13 @@ class MemoryQueue(AbstractMessageQueue):
 
     def enqueue_task(self, queue, message):
         self.queue.put((queue, message))
+
+    def discard_pending(self):
+        while True:
+            try:
+                self.queue.get_nowait()
+            except Empty:
+                break
 
 
 class MemoryResults(AbstractResultStore):
