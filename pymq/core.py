@@ -302,7 +302,7 @@ class DeferredResult(object):
 
     def __init__(self, store, task_id):
         self.store = store
-        self.task_id = task_id
+        self.id = task_id
         self._completed = False
 
     @property
@@ -341,7 +341,7 @@ class DeferredResult(object):
     def __nonzero__(self):
         """Return True if the result has arrived, otherwise False."""
         if not self._completed:
-            value = self.store.pop(self.task_id)
+            value = self.store.pop(self.id)
             if value is None:
                 return False
             assert len(value) == 1, value
@@ -352,12 +352,12 @@ class DeferredResult(object):
     def __repr__(self):
         if self:
             if isinstance(self._value, TaskFailure):
-                value = self._value
+                status = 'failed'
             else:
-                value = 'value=%r' % (self.value,)
+                status = 'success'
         else:
-            value = 'incomplete'
-        return '<DeferredResult %s>' % (value,)
+            status = 'incomplete'
+        return '<DeferredResult %s %s>' % (self.id, status)
 
 
 class TaskSet(object):

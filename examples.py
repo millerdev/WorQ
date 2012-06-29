@@ -71,7 +71,7 @@ def busy_wait(url):
 
         assert completed, repr(res)
         eq_(res.value, 'arg')
-        eq_(repr(res), "<DeferredResult value='arg'>")
+        eq_(repr(res), "<DeferredResult %s success>" % res.id)
 
 
 @example
@@ -88,9 +88,9 @@ def no_such_task(url):
         completed = res.wait(timeout=1, poll_interval=0)
 
         assert completed, repr(res)
-        err = 'no such task: func [default:%s]' % res.task_id
-        eq_(repr(res), '<DeferredResult %s>' % err)
-        with assert_raises(TaskFailure, err):
+        eq_(repr(res), '<DeferredResult %s failed>' % res.id)
+        with assert_raises(TaskFailure,
+                'no such task: func [default:%s]' % res.id):
             res.value
 
 
@@ -111,7 +111,7 @@ def worker_interrupted(url):
         completed = res.wait(timeout=1, poll_interval=0)
 
         assert completed, repr(res)
-        eq_(repr(res), '<DeferredResult KeyboardInterrupt: >')
+        eq_(repr(res), '<DeferredResult %s failed>' % res.id)
         with assert_raises(TaskFailure, 'KeyboardInterrupt: '):
             res.value
 
@@ -133,7 +133,7 @@ def task_error(url):
         completed = res.wait(timeout=1, poll_interval=0)
 
         assert completed, repr(res)
-        eq_(repr(res), "<DeferredResult Exception: fail!>")
+        eq_(repr(res), "<DeferredResult %s failed>" % res.id)
         with assert_raises(TaskFailure, 'Exception: fail!'):
             res.value
 
