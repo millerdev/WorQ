@@ -1,10 +1,9 @@
 TODO
 - Task heartbeat for monitoring
     - use this for better TaskSet resilience
-- Guaranteed message delivery in redis (maybe)
-    - Make atomic operation to...
-        - pop task id from normal queue
-        - abort if "processing"
-        - set "processing" (with timeout?)
-        - push task id to "processing" queue
+    - this can probably be implemented with DeferredResult status updates
+- Guaranteed message delivery in redis
+    - result is created in redis on enqueue task
+    - task/result has a state machine: pending, in process, completed, lost...
+    - running task can update its status on its (in process) result object
 - Worker pool

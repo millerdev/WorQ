@@ -1,24 +1,11 @@
 # PyMQ examples
-import logging
-import time
-from contextlib import contextmanager
-from threading import Thread
 from pymq import get_broker, Queue, Task, TaskSet, TaskFailure, TaskSpace
-
-log = logging.getLogger(__name__)
-test_urls = [
-    'memory://',
-    'redis://localhost:16379/0', # NOTE non-standard port
-]
-
-def example(func):
-    example.s.append(func)
-    return func
-example.s = []
+from pymq.tests.test_examples import example
+from pymq.tests.util import assert_raises, eq_, eventually, thread_worker
 
 
 @example
-def simple(url, run_worker):
+def simple(url):
     state = []
 
     def func(arg):
@@ -26,7 +13,7 @@ def simple(url, run_worker):
 
     broker = get_broker(url)
     broker.expose(func)
-    with run_worker(broker):
+    with thread_worker(broker):
 
         # -- task-invoking code, usually another process --
         q = Queue(url)
@@ -37,7 +24,7 @@ def simple(url, run_worker):
 
 
 @example
-def expose_method(url, run_worker):
+def expose_method(url):
 
     class Database(object):
         """stateful storage"""
@@ -55,7 +42,7 @@ def expose_method(url, run_worker):
     obj = TaskObj(db)
     broker = get_broker(url)
     broker.expose(obj.update_value)
-    with run_worker(broker):
+    with thread_worker(broker):
 
         # -- task-invoking code, usually another process --
         q = Queue(url)
@@ -65,14 +52,14 @@ def expose_method(url, run_worker):
 
 
 @example
-def busy_wait(url, run_worker):
+def busy_wait(url):
 
     def func(arg):
         return arg
 
     broker = get_broker(url)
     broker.expose(func)
-    with run_worker(broker):
+    with thread_worker(broker):
 
         # -- task-invoking code, usually another process --
         q = Queue(url)
@@ -88,10 +75,10 @@ def busy_wait(url, run_worker):
 
 
 @example
-def no_such_task(url, run_worker):
+def no_such_task(url):
 
     broker = get_broker(url)
-    with run_worker(broker):
+    with thread_worker(broker):
 
         # -- task-invoking code, usually another process --
         q = Queue(url)
@@ -108,14 +95,14 @@ def no_such_task(url, run_worker):
 
 
 @example
-def worker_interrupted(url, run_worker):
+def worker_interrupted(url):
 
     def func(arg):
         raise KeyboardInterrupt()
 
     broker = get_broker(url)
     broker.expose(func)
-    with run_worker(broker):
+    with thread_worker(broker):
 
         # -- task-invoking code, usually another process --
         q = Queue(url)
@@ -130,14 +117,14 @@ def worker_interrupted(url, run_worker):
 
 
 @example
-def task_error(url, run_worker):
+def task_error(url):
 
     def func(arg):
         raise Exception('fail!')
 
     broker = get_broker(url)
     broker.expose(func)
-    with run_worker(broker):
+    with thread_worker(broker):
 
         # -- task-invoking code, usually another process --
         q = Queue(url)
@@ -152,7 +139,7 @@ def task_error(url, run_worker):
 
 
 @example
-def taskset(url, run_worker):
+def taskset(url):
 
     def func(arg):
         return arg
@@ -160,21 +147,22 @@ def taskset(url, run_worker):
     broker = get_broker(url, 'not-the-default-queue')
     broker.expose(func)
     broker.expose(sum)
-    with run_worker(broker):
+    with thread_worker(broker):
 
         # -- task-invoking code, usually another process --
         q = Queue(url, name='not-the-default-queue')
 
         tasks = TaskSet(result_timeout=5)
-        for n in [1, 2, 3]:
-            tasks.add(q.func, n)
+        tasks.add(q.func, 1)
+        tasks.add(q.func, 2)
+        tasks.add(q.func, 3)
         res = tasks(q.sum)
 
         eventually((lambda: res.value if res else None), 6)
 
 
 @example
-def taskset_composition(url, run_worker):
+def taskset_composition(url):
 
     def func(arg):
         return arg
@@ -182,14 +170,15 @@ def taskset_composition(url, run_worker):
     broker = get_broker(url)
     broker.expose(func)
     broker.expose(sum)
-    with run_worker(broker):
+    with thread_worker(broker):
 
         # -- task-invoking code, usually another process --
         q = Queue(url)
 
         set_0 = TaskSet()
-        for n in [1, 2, 3]:
-            set_0.add(q.func, n)
+        set_0.add(q.func, 1)
+        set_0.add(q.func, 2)
+        set_0.add(q.func, 3)
 
         set_1 = TaskSet(result_timeout=5)
         set_1.add(q.func, 4)
@@ -202,7 +191,7 @@ def taskset_composition(url, run_worker):
 
 
 @example
-def taskset_with_errors(url, run_worker):
+def taskset_with_errors(url):
 
     def func(arg):
         if arg == 0:
@@ -211,12 +200,12 @@ def taskset_with_errors(url, run_worker):
 
     broker = get_broker(url)
     broker.expose(func)
-    with run_worker(broker):
+    with thread_worker(broker):
 
         # -- task-invoking code, usually another process --
         q = Queue(url)
 
-        tasks = TaskSet(result_timeout=5)
+        tasks = TaskSet(result_timeout=5) #, on_error=TaskSet.RAISE)
         tasks.add(q.func, 1)
         tasks.add(q.func, 0)
         tasks.add(q.func, 2)
@@ -227,7 +216,7 @@ def taskset_with_errors(url, run_worker):
 
 
 @example
-def task_namespaces(url, run_worker):
+def task_namespaces(url):
     state = []
     __name__ = 'module.path'
 
@@ -243,7 +232,7 @@ def task_namespaces(url, run_worker):
 
     broker = get_broker(url)
     broker.expose(ts)
-    with run_worker(broker):
+    with thread_worker(broker):
 
         # -- task-invoking code, usually another process --
         q = Queue(url, 'module.path')
@@ -255,7 +244,7 @@ def task_namespaces(url, run_worker):
 
 
 @example
-def more_namespaces(url, run_worker):
+def more_namespaces(url):
     state = []
 
     foo = TaskSpace('foo')
@@ -282,7 +271,7 @@ def more_namespaces(url, run_worker):
     broker.expose(foo)
     broker.expose(bar)
     broker.expose(baz)
-    with run_worker(broker):
+    with thread_worker(broker):
 
         # -- task-invoking code, usually another process --
         q = Queue(url)
@@ -298,49 +287,3 @@ def more_namespaces(url, run_worker):
             'baz-join 3',
             'baz-kick 4',
         ])
-
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-# testing helpers
-
-def test_examples():
-    for url in test_urls:
-        for test in example.s:
-            yield test, url, thread_worker
-
-@contextmanager
-def thread_worker(broker):
-    def run():
-        try:
-            broker.start_worker()
-        except:
-            log.error('worker crashed', exc_info=True)
-    t = Thread(target=run)
-    t.start()
-    try:
-        yield
-    finally:
-        broker.stop()
-        t.join()
-        broker.discard_pending_tasks()
-
-def eventually(condition, value, timeout=1):
-    end = time.time() + timeout
-    while time.time() < end:
-        result = condition()
-        if result:
-            eq_(result, value)
-            return
-    raise AssertionError('eventuality failed to occur: %r' % (value,))
-
-@contextmanager
-def assert_raises(exc_class, msg=None):
-    try:
-        yield
-    except exc_class as exc:
-        if msg is not None:
-            eq_(str(exc), msg)
-    else:
-        raise AssertionError('%s not raised' % exc_class.__name__)
-
-def eq_(value, other):
-    assert value == other, '%r != %r' % (value, other)
