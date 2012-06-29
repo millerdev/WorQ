@@ -27,16 +27,16 @@ def get_broker(url, *queues):
     result_store = make_results(url)
     return Broker(message_queue, result_store)
 
-def Queue(url, namespace='', name=DEFAULT):
+def queue(url, queue=DEFAULT, target=''):
     """Get a queue object for invoking remote tasks
 
     :param url: URL of the task queue.
-    :param namespace: Task namespace (similar to a python module). Must match
-        the namespace in which the remote callable was exposed.
-    :param name: The name of the queue on which tasks should be invoked.
-        Queued tasks will be invoked iff there is a worker listening on this
+    :param queue: The name of the queue on which tasks should be invoked.
+        Queued tasks will be invoked iff there is a worker listening on the
         named queue. Default value: 'default'.
-    :returns: A Queue object.
+    :param target: Task namespace (similar to a python module) or name
+        (similar to a python function). Default to the root namespace ('').
+    :returns: An instance of pymq.task.Queue.
     """
     broker = get_broker(url)
-    return broker.queue(namespace, name=name)
+    return broker.queue(queue, target)

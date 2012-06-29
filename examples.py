@@ -1,5 +1,5 @@
 # PyMQ examples
-from pymq import get_broker, Queue, Task, TaskSet, TaskFailure, TaskSpace
+from pymq import get_broker, queue, Task, TaskSet, TaskFailure, TaskSpace
 from pymq.tests.test_examples import example
 from pymq.tests.util import assert_raises, eq_, eventually, thread_worker
 
@@ -16,7 +16,7 @@ def simple(url):
     with thread_worker(broker):
 
         # -- task-invoking code, usually another process --
-        q = Queue(url)
+        q = queue(url)
 
         q.func('arg')
 
@@ -45,7 +45,7 @@ def expose_method(url):
     with thread_worker(broker):
 
         # -- task-invoking code, usually another process --
-        q = Queue(url)
+        q = queue(url)
         q.update_value(2)
 
         eventually((lambda:db.value), 2)
@@ -62,7 +62,7 @@ def busy_wait(url):
     with thread_worker(broker):
 
         # -- task-invoking code, usually another process --
-        q = Queue(url)
+        q = queue(url)
 
         func_task = Task(q.func, result_timeout=3)
         res = func_task('arg')
@@ -81,7 +81,7 @@ def no_such_task(url):
     with thread_worker(broker):
 
         # -- task-invoking code, usually another process --
-        q = Queue(url)
+        q = queue(url)
 
         res = Task(q.func, result_timeout=3)('arg')
 
@@ -105,7 +105,7 @@ def worker_interrupted(url):
     with thread_worker(broker):
 
         # -- task-invoking code, usually another process --
-        q = Queue(url)
+        q = queue(url)
 
         res = Task(q.func, result_timeout=3)('arg')
         completed = res.wait(timeout=1, poll_interval=0)
@@ -127,7 +127,7 @@ def task_error(url):
     with thread_worker(broker):
 
         # -- task-invoking code, usually another process --
-        q = Queue(url)
+        q = queue(url)
 
         res = Task(q.func, result_timeout=3)('arg')
         completed = res.wait(timeout=1, poll_interval=0)
@@ -144,13 +144,13 @@ def taskset(url):
     def func(arg):
         return arg
 
-    broker = get_broker(url, 'not-the-default-queue')
+    broker = get_broker(url)
     broker.expose(func)
     broker.expose(sum)
     with thread_worker(broker):
 
         # -- task-invoking code, usually another process --
-        q = Queue(url, name='not-the-default-queue')
+        q = queue(url)
 
         tasks = TaskSet(result_timeout=5)
         tasks.add(q.func, 1)
@@ -173,7 +173,7 @@ def taskset_composition(url):
     with thread_worker(broker):
 
         # -- task-invoking code, usually another process --
-        q = Queue(url)
+        q = queue(url)
 
         set_0 = TaskSet()
         set_0.add(q.func, 1)
@@ -203,7 +203,7 @@ def taskset_with_errors(url):
     with thread_worker(broker):
 
         # -- task-invoking code, usually another process --
-        q = Queue(url)
+        q = queue(url)
 
         tasks = TaskSet(result_timeout=5) #, on_error=TaskSet.RAISE)
         tasks.add(q.func, 1)
@@ -235,7 +235,7 @@ def task_namespaces(url):
     with thread_worker(broker):
 
         # -- task-invoking code, usually another process --
-        q = Queue(url, 'module.path')
+        q = queue(url, target='module.path')
 
         q.foo()
         q.bar(1)
@@ -274,7 +274,7 @@ def more_namespaces(url):
     with thread_worker(broker):
 
         # -- task-invoking code, usually another process --
-        q = Queue(url)
+        q = queue(url)
 
         q.foo.join(1)
         q.foo.bar.kick(2)

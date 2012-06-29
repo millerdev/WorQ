@@ -57,8 +57,8 @@ class Broker(object):
         """Discard pending tasks from all queues"""
         self.messages.discard_pending()
 
-    def queue(self, namespace='', name=DEFAULT):
-        return Queue(self, namespace, name=name)
+    def queue(self, queue=DEFAULT, target=''):
+        return Queue(self, queue, target)
 
     def enqueue(self, queue, task_id, task_name, args, kw, options):
         unknown_options = set(options) - self.task_options

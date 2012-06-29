@@ -5,45 +5,68 @@ from pymq.const import DEFAULT
 
 
 class Queue(object):
-    """Queue object for invoking remote tasks
+    """Queue for invoking remote tasks
+
+    New Queue instances are generated through attribute access. For example::
+
+        >>> q = Queue(broker)
+        >>> q.foo
+        <Queue foo [default]>
+        >>> q.foo.bar
+        <Queue foo.bar [default]>
+
+    A Queue instance can be called like a function, which invokes a remote
+    task identified by the target of the Queue instance. Example::
+
+        >>> q = Queue(broker)
+        >>> q.foo.func(1, key=None) # enqueue task to be invoked by worker
 
     NOTE two queue objects are considered equal if they refer to the same
-    queue on the same broker (their namespaces may be different).
+    queue on the same broker (their targets may be different).
     """
 
-    def __init__(self, broker, namespace='', name=DEFAULT):
+    def __init__(self, broker, queue=DEFAULT, target=''):
         self.__broker = broker
-        self.__name = name
-        self.__namespace = namespace
+        self.__queue = queue
+        self.__target = target
 
-    def __getattr__(self, name):
-        if self.__namespace:
-            name = '%s.%s' % (self.__namespace, name)
-        return Queue(self.__broker, name, self.__name)
+    def __getattr__(self, target):
+        if self.__target:
+            target = '%s.%s' % (self.__target, target)
+        return Queue(self.__broker, self.__queue, target)
 
     def __call__(self, *args, **kw):
+        """Invoke the task identified by this Queue"""
         return Task(self)(*args, **kw)
 
     def __eq__(self, other):
         if not isinstance(other, type(self)):
             return False
-        return (self.__broker, self.__name) == (other.__broker, other.__name)
+        return (self.__broker, self.__queue) == (other.__broker, other.__queue)
 
     def __ne__(self, other):
         return not self.__eq__(other)
 
     def __repr__(self):
-        return '<Queue %s namespace=%s>' % (self.__name, self.__namespace)
+        return '<Queue %s [%s]>' % (self.__target, self.__queue)
 
     def __str__(self):
-        return self.__name
+        return self.__target
 
 
 class Task(object):
+    """Remote task handle
+
+    This class can be used to construct a task with custom options. A task
+    is invoked by calling the task object.
+
+    :param queue: The Queue object on which this task should be executed.
+    :param **options: Custom task options.
+    """
 
     def __init__(self, queue, **options):
         self.queue = queue
-        self.name = queue._Queue__namespace
+        self.name = queue._Queue__target
         self.options = options
 
     @property
@@ -53,13 +76,14 @@ class Task(object):
     def __call__(self, *args, **kw):
         id = uuid4().hex
         return self.queue._Queue__broker.enqueue(
-            self.queue._Queue__name, id, self.name, args, kw, self.options)
+            self.queue._Queue__queue, id, self.name, args, kw, self.options)
 
     def with_options(self, options):
+        """Clone this task with a new set of options"""
         return Task(self.queue, **options)
 
     def __repr__(self):
-        return '<Task %s [%s]>' % (self.name, self.queue._Queue__name)
+        return '<Task %s [%s]>' % (self.name, self.queue._Queue__queue)
 
 
 class TaskFailure(Exception):
