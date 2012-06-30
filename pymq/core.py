@@ -85,22 +85,23 @@ class Broker(object):
             try:
                 task = self.tasks[task_name]
             except KeyError:
-                result = TaskFailure('no such task: %s [%s:%s]'
-                    % (task_name, queue, task_id))
+                result = TaskFailure(task_name, queue, task_id, 'no such task')
                 log.error(result)
             else:
                 result = task(*args, **kw)
         except _StopWorker:
-            result = TaskFailure('worker stopped')
+            result = TaskFailure(task_name, queue, task_id, 'worker stopped')
             raise
         except Exception, err:
             log.error('task failed: %s [%s:%s]',
                 task_name, queue, task_id, exc_info=True)
-            result = TaskFailure('%s: %s' % (type(err).__name__, err))
+            result = TaskFailure(task_name, queue, task_id,
+                '%s: %s' % (type(err).__name__, err))
         except BaseException, err:
             log.error('worker died in task: %s [%s:%s]',
                 task_name, queue, task_id, exc_info=True)
-            result = TaskFailure('%s: %s' % (type(err).__name__, err))
+            result = TaskFailure(task_name, queue, task_id,
+                '%s: %s' % (type(err).__name__, err))
             raise
         finally:
             if 'taskset' in options:

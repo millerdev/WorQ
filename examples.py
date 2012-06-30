@@ -114,7 +114,7 @@ def no_such_task(url):
         assert completed, repr(res)
         eq_(repr(res), '<DeferredResult %s failed>' % res.id)
         with assert_raises(TaskFailure,
-                'no such task: func [default:%s]' % res.id):
+                'func [default:%s] no such task' % res.id):
             res.value
 
 
@@ -136,7 +136,8 @@ def worker_interrupted(url):
 
         assert completed, repr(res)
         eq_(repr(res), '<DeferredResult %s failed>' % res.id)
-        with assert_raises(TaskFailure, 'KeyboardInterrupt: '):
+        with assert_raises(TaskFailure,
+                'func [default:%s] KeyboardInterrupt: ' % res.id):
             res.value
 
 
@@ -157,8 +158,9 @@ def task_error(url):
         completed = res.wait(timeout=1, poll_interval=0)
 
         assert completed, repr(res)
-        eq_(repr(res), "<DeferredResult %s failed>" % res.id)
-        with assert_raises(TaskFailure, 'Exception: fail!'):
+        eq_(repr(res), '<DeferredResult %s failed>' % res.id)
+        with assert_raises(TaskFailure,
+                'func [default:%s] Exception: fail!' % res.id):
             res.value
 
 
@@ -236,7 +238,12 @@ def taskset_with_errors(url):
         res = tasks(q.func)
         res.wait(timeout=1, poll_interval=0)
 
-        eq_(res.value, [1, TaskFailure('Exception: zero fail!'), 2])
+        try:
+            tid = res.value[1].task_id
+        except Exception:
+            assert 0, res.value
+        fail = TaskFailure('func', 'default', tid, 'Exception: zero fail!')
+        eq_(res.value, [1, fail, 2])
 
 
 @example

@@ -88,8 +88,30 @@ class Task(object):
 
 class TaskFailure(Exception):
 
+    @property
+    def task_name(self):
+        return self.args[0]
+
+    @property
+    def queue(self):
+        return self.args[1]
+
+    @property
+    def task_id(self):
+        return self.args[2]
+
+    @property
+    def error(self):
+        return self.args[3]
+
+    def __str__(self):
+        return '%s [%s:%s] %s' % self.args
+
+    def __repr__(self):
+        return '<TaskFailure %s>' % self
+
     def __eq__(self, other):
-        return isinstance(other, TaskFailure) and str(self) == str(other)
+        return isinstance(other, TaskFailure) and repr(self) == repr(other)
 
     def __ne__(self, other):
         return not self.__eq__(other)
