@@ -1,9 +1,22 @@
+import functools
 import time
 import logging
 from threading import Thread
 from contextlib import contextmanager
 
 log = logging.getLogger(__name__)
+
+TEST_URLS = [
+    'memory://',
+    'redis://localhost:16379/0', # NOTE non-standard port
+]
+
+def with_urls(test):
+    @functools.wraps(test)
+    def wrapper():
+        for url in TEST_URLS:
+            yield test, url
+    return wrapper
 
 @contextmanager
 def thread_worker(broker):

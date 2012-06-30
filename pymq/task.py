@@ -87,6 +87,7 @@ class Task(object):
 
 
 class TaskFailure(Exception):
+    """Task failure exception class"""
 
     @property
     def task_name(self):
@@ -195,6 +196,9 @@ class TaskSet(object):
         should be longer than the longest-running task in the set. The default
         is None, which means the final result will be ignored; the default
         timeout for intermediate tasks is 24 hours in that case.
+    :param on_error: What to do when one or more of the tasks in the set fail.
+        * FAIL: (default) do not execute final task if any task fails.
+        * PASS: Pass TaskFailure objects as the result of failed tasks.
 
     Usage:
         >>> t = TaskSet(result_timeout=60)
@@ -213,6 +217,9 @@ class TaskSet(object):
       Otherwise set a timeout on the results so they are not persisted forever
       if the taskset fails to complete for whatever reason.
     """
+
+    PASS = 'pass'
+    FAIL = 'fail'
 
     def __init__(self, **options):
         self.queue = None

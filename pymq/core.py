@@ -4,14 +4,14 @@ from pickle import dumps, loads
 from weakref import ref as weakref
 
 from pymq.const import DEFAULT
-from pymq.task import Queue, TaskSpace, TaskFailure, DeferredResult
+from pymq.task import Queue, TaskSet, TaskSpace, TaskFailure, DeferredResult
 
 log = logging.getLogger(__name__)
 
 class Broker(object):
 
     default_result_timeout = 60 * 60 * 24 # one day
-    task_options = set(['result_timeout', 'taskset'])
+    task_options = set(['result_timeout', 'taskset', 'on_error'])
 
     def __init__(self, message_queue, result_store):
         self.messages = message_queue
@@ -115,10 +115,19 @@ class Broker(object):
     def process_taskset(self, queue, taskset, result):
         taskset_id, task_name, args, kw, options, num = taskset
         timeout = options.get('result_timeout', self.default_result_timeout)
-        results = self.results.update(taskset_id, num, dumps(result), timeout)
-        if results is not None:
-            args = ([loads(r) for r in results],) + args
-            self.enqueue(queue, taskset_id, task_name, args, kw, options)
+        if (options.get('on_error', TaskSet.FAIL) == TaskSet.FAIL
+                and isinstance(result, TaskFailure)):
+            # suboptimal: pending tasks in the set will continue to be executed
+            # and their results will be persisted if they succeed.
+            message = dumps([TaskFailure(
+                task_name, queue, taskset_id, 'subtask(s) failed')])
+            self.results.set_result(taskset_id, message, timeout)
+        else:
+            results = self.results.update(
+                taskset_id, num, dumps(result), timeout)
+            if results is not None:
+                args = ([loads(r) for r in results],) + args
+                self.enqueue(queue, taskset_id, task_name, args, kw, options)
 
     def deferred_result(self, task_id):
         return self.results.deferred_result(task_id)

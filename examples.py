@@ -217,7 +217,13 @@ def taskset_composition(url):
 
 
 @example
-def taskset_with_errors(url):
+def taskset_with_failed_subtasks(url):
+    """TaskSet with TaskFailures passed to the final task
+
+    By default, a TaskSet fails if any of its subtasks fail. However, setting
+    the `on_error=TaskSet.PASS` option on the TaskSet will cause TaskFailure
+    objects to be passed as the result of any task that fails.
+    """
 
     def func(arg):
         if arg == 0:
@@ -231,18 +237,15 @@ def taskset_with_errors(url):
         # -- task-invoking code, usually another process --
         q = queue(url)
 
-        tasks = TaskSet(result_timeout=5) #, on_error=TaskSet.RAISE)
+        tasks = TaskSet(result_timeout=5, on_error=TaskSet.PASS)
         tasks.add(q.func, 1)
         tasks.add(q.func, 0)
         tasks.add(q.func, 2)
         res = tasks(q.func)
         res.wait(timeout=1, poll_interval=0)
 
-        try:
-            tid = res.value[1].task_id
-        except Exception:
-            assert 0, res.value
-        fail = TaskFailure('func', 'default', tid, 'Exception: zero fail!')
+        fail = TaskFailure(
+            'func', 'default', res.value[1].task_id, 'Exception: zero fail!')
         eq_(res.value, [1, fail, 2])
 
 

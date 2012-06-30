@@ -1,3 +1,5 @@
+from pymq.tests.util import TEST_URLS
+
 def example(func):
     # test helper
     example.s.append(func)
@@ -6,9 +8,6 @@ example.s = []
 
 def test_examples():
     import examples
-    for url in [
-        'memory://',
-        'redis://localhost:16379/0', # NOTE non-standard port
-    ]:
+    for url in TEST_URLS:
         for test in example.s:
             yield test, url
