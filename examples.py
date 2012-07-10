@@ -1,7 +1,8 @@
 # PyMQ examples
 from pymq import get_broker, queue, Task, TaskSet, TaskFailure, TaskSpace
 from pymq.tests.test_examples import example
-from pymq.tests.util import assert_raises, eq_, eventually, thread_worker
+from pymq.tests.util import (assert_raises, eq_, eventually,
+    thread_worker, StepLock)
 
 
 @example
@@ -91,6 +92,45 @@ def busy_wait(url):
         func_task = Task(q.func, result_timeout=3)
         res = func_task('arg')
 
+        completed = res.wait(timeout=1, poll_interval=0)
+
+        assert completed, repr(res)
+        eq_(res.value, 'arg')
+        eq_(repr(res), "<DeferredResult %s success>" % res.id)
+
+
+@example
+def result_status(url):
+    lock = StepLock()
+
+    def func(update_status, arg):
+        lock.acquire()
+        update_status([10])
+        lock.acquire()
+        return arg
+
+    broker = get_broker(url)
+    broker.expose(func)
+    with thread_worker(broker, lock):
+
+        # -- task-invoking code, usually another process --
+        q = queue(url)
+
+        func_task = Task(q.func, track_status=True)
+        res = func_task('arg')
+
+        eventually((lambda:res.status == 'enqueued'), True)
+        eq_(repr(res), "<DeferredResult %s enqueued>" % res.id)
+
+        lock.step()
+        eventually((lambda:res.status == 'processing'), True)
+        eq_(repr(res), "<DeferredResult %s processing>" % res.id)
+
+        lock.step()
+        eventually((lambda:res.status == [10]), True)
+        eq_(repr(res), "<DeferredResult %s [10]>" % res.id)
+
+        lock.step()
         completed = res.wait(timeout=1, poll_interval=0)
 
         assert completed, repr(res)

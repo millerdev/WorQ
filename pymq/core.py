@@ -8,10 +8,18 @@ from pymq.task import Queue, TaskSet, TaskSpace, TaskFailure, DeferredResult
 
 log = logging.getLogger(__name__)
 
+HOUR = 60 * 60 # one hour
+DAY = HOUR * 24 # one day
+
 class Broker(object):
 
-    default_result_timeout = 60 * 60 * 24 # one day
-    task_options = set(['result_timeout', 'taskset', 'on_error'])
+    default_result_timeout = DAY
+    task_options = set([
+        'result_timeout',
+        'track_status',
+        'taskset',
+        'on_error',
+    ])
 
     def __init__(self, message_queue, result_store):
         self.messages = message_queue
@@ -67,8 +75,11 @@ class Broker(object):
                 % ', '.join(unknown_options))
         log.debug('enqueue %s [%s:%s]', task_name, queue, task_id)
         message = dumps((task_id, task_name, args, kw, options))
-        if options.get('result_timeout') is not None:
+        track_status = options.get('track_status', False)
+        if track_status or options.get('result_timeout') is not None:
             result = self.results.deferred_result(task_id)
+            if track_status:
+                self.results.set_status(task_id, dumps('enqueued'), DAY)
         else:
             result = None
         self.messages.enqueue_task(queue, message)
@@ -81,6 +92,12 @@ class Broker(object):
             log.error('cannot load task message: %s', message, exc_info=True)
             return
         log.debug('invoke %s [%s:%s]', task_name, queue, task_id)
+        track_status = options.get('track_status', False)
+        if track_status:
+            self.results.set_status(task_id, dumps('processing'), DAY)
+            def update_status(value):
+                self.results.set_status(task_id, dumps(value), DAY)
+            args = (update_status,) + args
         try:
             try:
                 task = self.tasks[task_name]
@@ -106,11 +123,11 @@ class Broker(object):
         finally:
             if 'taskset' in options:
                 self.process_taskset(queue, options['taskset'], result)
-            else:
-                timeout = options.get('result_timeout')
-                if timeout is not None:
-                    message = dumps([result])
-                    self.results.set_result(task_id, message, timeout)
+            elif track_status or 'result_timeout' in options:
+                message = dumps([result])
+                timeout = options \
+                    .get('result_timeout', self.default_result_timeout)
+                self.results.set_result(task_id, message, timeout)
 
     def process_taskset(self, queue, taskset, result):
         taskset_id, task_name, args, kw, options, num = taskset
@@ -191,6 +208,16 @@ class AbstractResultStore(object):
             return None
         return loads(message)
 
+    def status(self, task_id):
+        """Pop and deserialize task status
+
+        :param task_id: Unique task identifier string.
+        :returns: Deserialized status object.
+        :raises: KeyError if there is no status or the status has already
+            been popped.
+        """
+        return loads(self.pop_status(task_id))
+
     def set_result(self, task_id, message, timeout):
         """Persist serialized result message.
 
@@ -212,6 +239,31 @@ class AbstractResultStore(object):
 
         :param task_id: Unique task identifier string.
         :returns: The result message; None if not found.
+        """
+        raise NotImplementedError('abstract method')
+
+    def set_status(self, task_id, message, timeout):
+        """Persist serialized task status
+
+        Must be implemented by each broker implementation. Not normally called
+        by user code.
+
+        :param task_id: Unique task identifier string.
+        :param message: (string) Serialized status object.
+        :param timeout: Number of seconds to persist the status before
+            discarding it.
+        """
+        raise NotImplementedError('abstract method')
+
+    def pop_status(self, task_id):
+        """Pop serialized task status
+
+        Must be implemented by each broker implementation. Not normally called
+        by user code.
+
+        :param task_id: Unique task identifier string.
+        :returns: (string) Serialized status object.
+        :raises: KeyError if there is no status for the given task id.
         """
         raise NotImplementedError('abstract method')
 

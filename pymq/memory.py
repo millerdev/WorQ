@@ -56,6 +56,7 @@ class MemoryResults(AbstractResultStore):
         super(MemoryResults, self).__init__(*args, **kw)
         self.results_by_task = WeakValueDictionary()
         self.results = WeakKeyDictionary()
+        self.statuses = WeakKeyDictionary()
         self.tasksets = {}
 
     def deferred_result(self, task_id):
@@ -72,6 +73,15 @@ class MemoryResults(AbstractResultStore):
     def pop_result(self, task_id):
         result_obj = self.results_by_task[task_id]
         return self.results.pop(result_obj, None)
+
+    def set_status(self, task_id, message, timeout):
+        result_obj = self.results_by_task.get(task_id)
+        if result_obj is not None:
+            self.statuses[result_obj] = message
+
+    def pop_status(self, task_id):
+        result_obj = self.results_by_task[task_id]
+        return self.statuses.pop(result_obj)
 
     def update(self, taskset_id, num, message, timeout):
         # not thread-safe and leaks memory if a taskset is not completed

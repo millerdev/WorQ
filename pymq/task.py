@@ -145,6 +145,15 @@ class DeferredResult(object):
             raise self._value
         return self._value
 
+    @property
+    def status(self):
+        """Get task status"""
+        try:
+            self._status = self.store.status(self.id)
+        except KeyError:
+            pass
+        return self._status
+
     def wait(self, timeout=None, poll_interval=1):
         """Wait for the task result.
 
@@ -184,7 +193,7 @@ class DeferredResult(object):
             else:
                 status = 'success'
         else:
-            status = 'incomplete'
+            status = getattr(self, 'status', 'incomplete')
         return '<DeferredResult %s %s>' % (self.id, status)
 
 

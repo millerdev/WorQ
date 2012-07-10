@@ -9,6 +9,7 @@ log = logging.getLogger(__name__)
 
 QUEUE_PATTERN = 'pymq:queue:%s'
 RESULT_PATTERN = 'pymq:result:%s'
+STATUS_PATTERN = 'pymq:status:%s'
 TASKSET_PATTERN = 'pymq:taskset:%s'
 
 
@@ -65,6 +66,20 @@ class RedisResults(RedisBackendMixin, AbstractResultStore):
         pipe.get(key)
         pipe.delete(key)
         return pipe.execute()[0]
+
+    def set_status(self, task_id, message, timeout):
+        key = STATUS_PATTERN % task_id
+        self.redis.setex(key, timeout, message)
+
+    def pop_status(self, task_id):
+        key = STATUS_PATTERN % task_id
+        pipe = self.redis.pipeline()
+        pipe.get(key)
+        pipe.delete(key)
+        value = pipe.execute()[0]
+        if value is None:
+            raise KeyError(task_id)
+        return value
 
     def update(self, taskset_id, num_tasks, message, timeout):
         key = TASKSET_PATTERN % taskset_id
