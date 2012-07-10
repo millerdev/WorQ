@@ -73,7 +73,7 @@ def named_queues(url):
         high.func(1)
         low.func(2)
 
-        eventually((lambda:len(state) == 2 and state), [1, 2])
+        eventually((lambda:state), [1, 2])
 
 
 @example
@@ -103,7 +103,7 @@ def busy_wait(url):
 def result_status(url):
     lock = StepLock()
 
-    def func(update_status, arg):
+    def func(arg, update_status=None):
         lock.acquire()
         update_status([10])
         lock.acquire()
@@ -116,18 +116,18 @@ def result_status(url):
         # -- task-invoking code, usually another process --
         q = queue(url)
 
-        func_task = Task(q.func, track_status=True)
+        func_task = Task(q.func, track_result=True)
         res = func_task('arg')
 
-        eventually((lambda:res.status == 'enqueued'), True)
+        eventually((lambda:res.status), 'enqueued')
         eq_(repr(res), "<DeferredResult %s enqueued>" % res.id)
 
         lock.step()
-        eventually((lambda:res.status == 'processing'), True)
+        eventually((lambda:res.status), 'processing')
         eq_(repr(res), "<DeferredResult %s processing>" % res.id)
 
         lock.step()
-        eventually((lambda:res.status == [10]), True)
+        eventually((lambda:res.status), [10])
         eq_(repr(res), "<DeferredResult %s [10]>" % res.id)
 
         lock.step()
@@ -314,7 +314,7 @@ def task_namespaces(url):
         q.foo()
         q.bar(1)
 
-        eventually((lambda:len(state) == 2 and state), ['foo', 1])
+        eventually((lambda:state), ['foo', 1])
 
 
 @example
@@ -355,7 +355,7 @@ def more_namespaces(url):
         q.foo.bar.baz.join(3)
         q.foo.bar.baz.kick(4)
 
-        eventually((lambda:len(state) == 4 and state), [
+        eventually((lambda:state), [
             'foo-join 1',
             'bar-kick 2',
             'baz-join 3',

@@ -62,6 +62,15 @@ class Task(object):
 
     :param queue: The Queue object on which this task should be executed.
     :param **options: Custom task options.
+        * track_result - when specified, send an extra 'update_status' keyword
+            argument to the task. The value of the argument is a function that
+            can be called to update the status of the task result.
+        * result_timeout - timeout value for retaining the result in the result
+            store. A default timeout of one day is used if 'result_timeout'
+            is not specified and 'track_result' is `True`.
+        If neither 'track_result' nor 'result_timeout' are specified then the
+        task result is ignored. Thus, the result tracking options add some
+        overhead to task processing.
     """
 
     def __init__(self, queue, **options):

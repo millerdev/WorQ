@@ -13,10 +13,9 @@ DAY = HOUR * 24 # one day
 
 class Broker(object):
 
-    default_result_timeout = DAY
     task_options = set([
+        'track_result',
         'result_timeout',
-        'track_status',
         'taskset',
         'on_error',
     ])
@@ -75,11 +74,12 @@ class Broker(object):
                 % ', '.join(unknown_options))
         log.debug('enqueue %s [%s:%s]', task_name, queue, task_id)
         message = dumps((task_id, task_name, args, kw, options))
-        track_status = options.get('track_status', False)
-        if track_status or options.get('result_timeout') is not None:
+        track_result = options.get('track_result', False)
+        if track_result or 'result_timeout' in options:
             result = self.results.deferred_result(task_id)
-            if track_status:
-                self.results.set_status(task_id, dumps('enqueued'), DAY)
+            if track_result:
+                timeout = options.get('result_timeout', DAY)
+                self.results.set_status(task_id, dumps('enqueued'), timeout)
         else:
             result = None
         self.messages.enqueue_task(queue, message)
@@ -92,12 +92,13 @@ class Broker(object):
             log.error('cannot load task message: %s', message, exc_info=True)
             return
         log.debug('invoke %s [%s:%s]', task_name, queue, task_id)
-        track_status = options.get('track_status', False)
-        if track_status:
-            self.results.set_status(task_id, dumps('processing'), DAY)
+        timeout = options.get('result_timeout', DAY)
+        track_result = options.get('track_result', False)
+        if track_result:
+            self.results.set_status(task_id, dumps('processing'), timeout)
             def update_status(value):
-                self.results.set_status(task_id, dumps(value), DAY)
-            args = (update_status,) + args
+                self.results.set_status(task_id, dumps(value), timeout)
+            kw['update_status'] = update_status
         try:
             try:
                 task = self.tasks[task_name]
@@ -123,15 +124,13 @@ class Broker(object):
         finally:
             if 'taskset' in options:
                 self.process_taskset(queue, options['taskset'], result)
-            elif track_status or 'result_timeout' in options:
+            elif track_result or 'result_timeout' in options:
                 message = dumps([result])
-                timeout = options \
-                    .get('result_timeout', self.default_result_timeout)
                 self.results.set_result(task_id, message, timeout)
 
     def process_taskset(self, queue, taskset, result):
         taskset_id, task_name, args, kw, options, num = taskset
-        timeout = options.get('result_timeout', self.default_result_timeout)
+        timeout = options.get('result_timeout', DAY)
         if (options.get('on_error', TaskSet.FAIL) == TaskSet.FAIL
                 and isinstance(result, TaskFailure)):
             # suboptimal: pending tasks in the set will continue to be executed

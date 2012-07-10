@@ -78,14 +78,13 @@ class StepLock(TimeoutLock):
         self.release()
         self.step_lock.acquire()
 
-def eventually(condition, value, timeout=1):
+def eventually(get_value, value, timeout=1):
     end = time.time() + timeout
     while time.time() < end:
-        result = condition()
-        if result:
-            eq_(result, value)
+        result = get_value()
+        if result == value:
             return
-    raise AssertionError('eventuality failed to occur: %r' % (value,))
+    raise AssertionError('eventually timeout: %r != %r' % (result, value))
 
 @contextmanager
 def assert_raises(exc_class, msg=None):
