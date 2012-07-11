@@ -8,13 +8,14 @@ from pymq.task import Queue, TaskSet, TaskSpace, TaskFailure, DeferredResult
 
 log = logging.getLogger(__name__)
 
-HOUR = 60 * 60 # one hour
-DAY = HOUR * 24 # one day
+MINUTE = 60 # number of seconds in one minute
+HOUR = MINUTE * 60 # number of seconds in one hour
+DAY = HOUR * 24 # number of seconds in one day
 
 class Broker(object):
 
     task_options = set([
-        'track_result',
+        'result_status',
         'result_timeout',
         'taskset',
         'on_error',
@@ -74,10 +75,10 @@ class Broker(object):
                 % ', '.join(unknown_options))
         log.debug('enqueue %s [%s:%s]', task_name, queue, task_id)
         message = dumps((task_id, task_name, args, kw, options))
-        track_result = options.get('track_result', False)
-        if track_result or 'result_timeout' in options:
+        result_status = options.get('result_status', False)
+        if result_status or 'result_timeout' in options:
             result = self.results.deferred_result(task_id)
-            if track_result:
+            if result_status:
                 timeout = options.get('result_timeout', DAY)
                 self.results.set_status(task_id, dumps('enqueued'), timeout)
         else:
@@ -93,8 +94,8 @@ class Broker(object):
             return
         log.debug('invoke %s [%s:%s]', task_name, queue, task_id)
         timeout = options.get('result_timeout', DAY)
-        track_result = options.get('track_result', False)
-        if track_result:
+        result_status = options.get('result_status', False)
+        if result_status:
             self.results.set_status(task_id, dumps('processing'), timeout)
             def update_status(value):
                 self.results.set_status(task_id, dumps(value), timeout)
@@ -124,7 +125,7 @@ class Broker(object):
         finally:
             if 'taskset' in options:
                 self.process_taskset(queue, options['taskset'], result)
-            elif track_result or 'result_timeout' in options:
+            elif result_status or 'result_timeout' in options:
                 message = dumps([result])
                 self.results.set_result(task_id, message, timeout)
 

@@ -116,7 +116,7 @@ def result_status(url):
         # -- task-invoking code, usually another process --
         q = queue(url)
 
-        func_task = Task(q.func, track_result=True)
+        func_task = Task(q.func, result_status=True)
         res = func_task('arg')
 
         eventually((lambda:res.status), 'enqueued')

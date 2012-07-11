@@ -18,8 +18,13 @@ class Queue(object):
     A Queue instance can be called like a function, which invokes a remote
     task identified by the target of the Queue instance. Example::
 
+        # Enqueue task 'func' in namespace 'foo' to be invoked
+        # by a worker listening on the 'default' queue.
         >>> q = Queue(broker)
-        >>> q.foo.func(1, key=None) # enqueue task to be invoked by worker
+        >>> q.foo.func(1, key=None)
+
+    The arrangement of Queue tasks in task spaces is similar to Python's system
+    of defining functions in modules and packages.
 
     NOTE two queue objects are considered equal if they refer to the same
     queue on the same broker (their targets may be different).
@@ -60,17 +65,15 @@ class Task(object):
     This class can be used to construct a task with custom options. A task
     is invoked by calling the task object.
 
-    :param queue: The Queue object on which this task should be executed.
-    :param **options: Custom task options.
-        * track_result - when specified, send an extra 'update_status' keyword
-            argument to the task. The value of the argument is a function that
-            can be called to update the status of the task result.
-        * result_timeout - timeout value for retaining the result in the result
-            store. A default timeout of one day is used if 'result_timeout'
-            is not specified and 'track_result' is `True`.
-        If neither 'track_result' nor 'result_timeout' are specified then the
-        task result is ignored. Thus, the result tracking options add some
-        overhead to task processing.
+    :param queue: The Queue object identifying the task to be executed.
+    :param result_status: Default False. When True, send an extra keyword
+        argument ('update_status') when invoking the task. The 'update_status'
+        argument is a function that can be called to update the status of the
+        task result.
+    :param result_timeout: Timeout value for retaining the result in the result
+        store. A default timeout of one day is used if 'result_timeout' is not
+        specified and 'result_status' is True. If neither 'result_status' nor
+        'result_timeout' are specified then the task result is ignored.
     """
 
     def __init__(self, queue, **options):
