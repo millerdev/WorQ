@@ -2,7 +2,7 @@ import functools
 import time
 import logging
 from contextlib import contextmanager
-from threading import Thread, Lock
+from threading import Thread, Event
 
 from pymq.core import _StopWorker
 
@@ -21,19 +21,19 @@ def with_urls(test):
     return wrapper
 
 @contextmanager
-def thread_worker(broker, lock=None):
-    if lock is None:
+def thread_worker(broker, event=None):
+    if event is None:
         def run():
             try:
                 broker.start_worker()
             except:
                 log.error('worker crashed', exc_info=True)
     else:
-        # pause worker prior to invoking each task
+        # wait for event to be set prior to invoking each task
         def run():
             try:
                 for queue, message in broker.messages:
-                    lock.acquire()
+                    event.wait()
                     broker.invoke(queue, message)
             except _StopWorker:
                 log.info('worker stopped')
@@ -45,38 +45,27 @@ def thread_worker(broker, lock=None):
         yield
     finally:
         broker.stop()
-        if lock is not None:
-            lock.release()
+        if event is not None:
+            event.set()
         t.join()
         broker.discard_pending_tasks()
 
-class TimeoutLock(object):
-    """A lock with acquisition timeout"""
-    def __init__(self, locked=True):
-        self.lock = Lock()
-        if locked:
-            self.lock.acquire()
-    def acquire(self, timeout=1):
-        end = time.time() + timeout
-        while time.time() < end:
-            if self.lock.acquire(False):
-                return
-        raise Exception('lock timeout')
-    def release(self):
-        self.lock.release()
+class TempEvent(object):
+    """An event with a default wait timeout of one second."""
+    def __init__(self):
+        self.event = Event()
+    def set(self):
+        self.event.set()
+    def wait(self, timeout=1):
+        """Wait for the event to be set, then clear the event.
 
-class StepLock(TimeoutLock):
-    """A lock for temporarily blocking queue processing"""
-    def __init__(self, locked=True):
-        super(StepLock, self).__init__(locked)
-        self.step_lock = TimeoutLock()
-    def acquire(self, timeout=1):
-        super(StepLock, self).acquire(timeout)
-        self.step_lock.release()
-    def step(self):
-        """Release lock and wait until it is next acquired."""
-        self.release()
-        self.step_lock.acquire()
+        :param timeout: Seconds to wait prior to raising an exception.
+        :raises: Exception on timeout.
+        """
+        if self.event.wait(timeout):
+            self.event.clear()
+            return
+        raise Exception('event timeout')
 
 def eventually(get_value, value, timeout=1):
     end = time.time() + timeout

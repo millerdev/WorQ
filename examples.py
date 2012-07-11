@@ -2,7 +2,7 @@
 from pymq import get_broker, queue, Task, TaskSet, TaskFailure, TaskSpace
 from pymq.tests.test_examples import example
 from pymq.tests.util import (assert_raises, eq_, eventually,
-    thread_worker, StepLock)
+    thread_worker, TempEvent)
 
 
 @example
@@ -101,17 +101,20 @@ def busy_wait(url):
 
 @example
 def result_status(url):
-    lock = StepLock()
+    # NOTE an event is used to control state interactions between the producer
+    # and the worker for illustration purposes only. This type of lock-step
+    # interaction is not normally needed or even desired.
+    event = TempEvent()
 
     def func(arg, update_status=None):
-        lock.acquire()
+        event.wait()
         update_status([10])
-        lock.acquire()
+        event.wait()
         return arg
 
     broker = get_broker(url)
     broker.expose(func)
-    with thread_worker(broker, lock):
+    with thread_worker(broker, event):
 
         # -- task-invoking code, usually another process --
         q = queue(url)
@@ -122,15 +125,15 @@ def result_status(url):
         eventually((lambda:res.status), 'enqueued')
         eq_(repr(res), "<DeferredResult %s enqueued>" % res.id)
 
-        lock.step()
+        event.set()
         eventually((lambda:res.status), 'processing')
         eq_(repr(res), "<DeferredResult %s processing>" % res.id)
 
-        lock.step()
+        event.set()
         eventually((lambda:res.status), [10])
         eq_(repr(res), "<DeferredResult %s [10]>" % res.id)
 
-        lock.step()
+        event.set()
         completed = res.wait(timeout=1, poll_interval=0)
 
         assert completed, repr(res)
