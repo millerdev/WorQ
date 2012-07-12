@@ -1,7 +1,9 @@
 import functools
 import time
 import logging
+import shutil
 from contextlib import contextmanager
+from tempfile import mkdtemp
 from threading import Thread, Event
 
 from pymq.core import _StopWorker
@@ -13,12 +15,18 @@ TEST_URLS = [
     'redis://localhost:16379/0', # NOTE non-standard port
 ]
 
-def with_urls(test):
-    @functools.wraps(test)
-    def wrapper():
-        for url in TEST_URLS:
-            yield test, url
-    return wrapper
+def with_urls(test=None, exclude=None):
+    if test is not None:
+        @functools.wraps(test)
+        def wrapper():
+            for url in TEST_URLS:
+                if exclude:
+                    if not url.startswith(exclude):
+                        yield test, url
+                else:
+                    yield test, url
+        return wrapper
+    return functools.partial(with_urls, exclude=exclude)
 
 @contextmanager
 def thread_worker(broker, event=None):
@@ -74,6 +82,22 @@ def eventually(get_value, value, timeout=1):
         if result == value:
             return
     raise AssertionError('eventually timeout: %r != %r' % (result, value))
+
+@contextmanager
+def tempdir(*args, **kw):
+    """Create a temporary directory to be used in a test
+
+    If (optional keyword argument) 'delete' evaluates to True (the default
+    value), the temporary directory and all files in it will be removed on
+    context manager exit.
+    """
+    delete = kw.pop("delete", True)
+    path = mkdtemp(*args, **kw)
+    try:
+        yield path
+    finally:
+        if delete:
+            shutil.rmtree(path)
 
 @contextmanager
 def assert_raises(exc_class, msg=None):

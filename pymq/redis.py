@@ -38,12 +38,21 @@ class RedisBackendMixin(object):
 class RedisQueue(RedisBackendMixin, AbstractMessageQueue):
     """Redis message queue"""
 
+    def __init__(self, *args, **kw):
+        super(RedisQueue, self).__init__(*args, **kw)
+        self.queue_keys = [QUEUE_PATTERN % q for q in self.queues]
+        self.queue_trim = len(QUEUE_PATTERN % '')
+
+    def get(self, timeout=0):
+        item = self.redis.blpop(self.queue_keys, timeout=timeout)
+        if item is None:
+            return item
+        queue, message = item
+        return (queue[self.queue_trim:], message)
+
     def __iter__(self):
-        queue_keys = [QUEUE_PATTERN % q for q in self.queues]
-        queue_trim = len(QUEUE_PATTERN % '')
         while True:
-            queue, message = self.redis.blpop(queue_keys)
-            yield (queue[queue_trim:], message)
+            yield self.get()
 
     def enqueue_task(self, queue, message):
         key = QUEUE_PATTERN % queue

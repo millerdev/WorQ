@@ -30,9 +30,13 @@ class MemoryQueue(AbstractMessageQueue):
             log.warn('MemoryQueue does not support named queues')
         self.queue = Queue()
 
+    def get(self, timeout=None):
+        # TODO handle Empty, return None
+        return self.queue.get(timeout=timeout)
+
     def __iter__(self):
         while True:
-            yield self.queue.get()
+            yield self.get()
 
     def enqueue_task(self, queue, message):
         self.queue.put((queue, message))

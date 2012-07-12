@@ -175,6 +175,17 @@ class AbstractMessageQueue(object):
         """
         raise NotImplementedError('abstract method')
 
+    def get(self, timeout=None):
+        """Get a task message from the queue
+
+        :param timeout: Number of seconds to wait before returning None if no
+            task is available in the queue. Wait forever if timeout is None
+            (the default value).
+        :returns: A task message; None if timeout was reached before a task
+            arrived.
+        """
+        raise NotImplementedError('abstract method')
+
     def enqueue_task(self, queue, message):
         """Enqueue a task message onto a named task queue.
 
