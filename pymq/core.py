@@ -1,6 +1,6 @@
 import logging
 from collections import defaultdict
-from pickle import dumps, loads
+from cPickle import dumps, loads
 from weakref import ref as weakref
 
 from pymq.const import DEFAULT

@@ -27,82 +27,69 @@ STOP = type('STOP', (object,), {})
 class WorkerPool(object):
 
     def __init__(self, broker_url,
-            num_workers=None,
+            workers=None,
             get_task_timeout=GET_TASK_TIMEOUT,
             handle_sigterm=True):
         self.broker_url = broker_url
-        self.get_task_timeout = get_task_timeout
-        if num_workers is None:
+        if workers is None:
             try:
-                num_workers = cpu_count()
+                workers = cpu_count()
             except NotImplementedError:
-                num_workers = 1
-        self.num_workers = num_workers
-        if handle_sigterm:
-            setup_exit_handler()
+                workers = 1
+        self.workers = workers
+        self.get_task_timeout = get_task_timeout
+        self.handle_sigterm = handle_sigterm
+        self._workers = ThreadQueue()
+        self._running = False
 
     def start(_self, _init, *args, **kw):
         self = _self
-        url = self.broker_url
-        workers = ThreadQueue()
-#        returns = ThreadQueue()
-        for n in range(self.num_workers):
-            workers.put(Worker(url, _init, args, kw))
+        self._running = True
+        for n in range(self.workers):
+            self._workers.put(Worker(self.broker_url, _init, args, kw))
 
-        def consumer_thread():
-            broker = get_broker(url)
-            timeout = self.get_task_timeout
-            get_task = broker.messages.get
+        self._consumer_thread = Thread(target=self._consume_tasks)
+        self._consumer_thread.start()
 
-            def make_return_worker_callback(worker):
-                def return_worker():
-                    log.debug('returning %s to pool', worker)
-                    workers.put(worker)
-                return return_worker
+        if self.handle_sigterm:
+            setup_exit_handler()
+            try:
+                # HACK how else to sleep indefinitely? The main thread receives
+                # signals, which should not interrupt anything critical, so its
+                # sole purpose is to be the signal handler.
+                while True:
+                    time.sleep(DAY)
+            finally:
+                self.stop()
 
-            while True:
-                worker = workers.get()
-                if worker is STOP:
-                    log.debug('stopping consumer')
-                    return
-                task = get_task(timeout)
-                if task is None:
-                    workers.put(worker)
-                    continue
-                log.debug('sending task to worker')
-                worker.execute(task, make_return_worker_callback(worker))
+    def _consume_tasks(self):
+        timeout = self.get_task_timeout
+        broker = get_broker(self.broker_url)
+        get_task = broker.messages.get
+        get_worker = self._workers.get
+        put_worker = self._workers.put
+        while True:
+            worker = get_worker()
+            if worker is STOP:
+                break
+            task = get_task(timeout)
+            if task is None:
+                put_worker(worker)
+                continue
+            worker.execute(task, put_worker)
+        log.debug('consumer stopped')
 
-#        def monitor_thread():
-#            while True:
-#                worker = returns.get()
-#                if worker is STOP:
-#                    log.debug('stopping monitor')
-#                    break
-#                workers.put(worker)
+    def stop(self):
+        if not self._running:
+            return False
+        self._running = False
 
-        consumer = Thread(target=consumer_thread)
-        consumer.start()
-#        monitor = Thread(target=monitor_thread)
-#        monitor.start()
-
-        try:
-            # HACK how else to sleep indefinitely? The main thread receives
-            # signals, which should not interrupt anything critical.
-            while True:
-                time.sleep(DAY)
-        finally:
-            log.info('shutting down...')
-            def term(worker):
-                worker.terminate()
-                log.debug('terminated %s', worker)
-            empty_queue(workers, term)
-            #empty_queue(returns, term)
-            workers.put(STOP)
-            #returns.put(STOP)
-            consumer.join()
-            #monitor.join()
-            empty_queue(workers, term)
-            #empty_queue(returns, term)
+        log.info('shutting down...')
+        drain_queue(self._workers, Worker.terminate)
+        self._workers.put(STOP)
+        self._consumer_thread.join()
+        drain_queue(self._workers, Worker.terminate)
+        return True
 
 
 class Worker(object):
@@ -115,18 +102,23 @@ class Worker(object):
     def __str__(self):
         return 'Worker-%s' % self.proc.pid
 
-    def execute(self, task, callback):
+    def execute(self, task, return_to_pool):
         def run():
+            log.debug('sending task to worker')
             self.pipe.send(task)
+
             # TODO update result heartbeat
             # TODO handle worker died
             self.pipe.recv()
-            callback()
+
+            log.debug('returning %s to pool', self)
+            return_to_pool(self)
         Thread(target=run).start()
 
     def terminate(self):
         self.pipe.send(STOP)
         self.proc.join()
+        log.debug('terminated %s', self)
 
 
 def worker_process(pipe, url, init, init_args, init_kw):
@@ -142,7 +134,7 @@ def worker_process(pipe, url, init, init_args, init_kw):
         pipe.send(None)
 
 
-def empty_queue(queue, handle_item):
+def drain_queue(queue, handle_item):
     while True:
         try:
             item = queue.get_nowait()
