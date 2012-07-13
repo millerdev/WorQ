@@ -141,6 +141,50 @@ def test_WorkerPool_crashed_worker(url):
         assert res.wait(timeout=20, poll_interval=0.1), 'second not completed'
         assert res.value != pid, pid
 
+
+@with_urls(exclude='memory')
+def test_WorkerPool_worker_shutdown_on_parent_die(url):
+    def pid_running(pid):
+        def is_process_running(pid=pid):
+            try:
+                os.kill(pid, 0)
+            except OSError:
+                return False
+            return True
+        return is_process_running
+
+    def init_worker(broker, tmp, logpath):
+        logging_config(logpath, 'Worker-%s' % os.getpid())
+
+        @broker.expose
+        def pid():
+            return os.getpid()
+
+        import pymq.procpool
+        pymq.procpool.WORKER_POLL_INTERVAL = 0.1
+
+    with tempdir() as tmp:
+
+        logpath = join(tmp, 'output.log')
+        proc = run_in_subprocess(worker_pool, url, init_worker, (tmp, logpath))
+
+        with printlog(logpath), force_kill_on_exit(proc):
+
+            q = queue(url)
+
+            res = Task(q.pid, result_timeout=10)()
+            assert res.wait(timeout=30, poll_interval=0.01), 'not completed'
+
+            os.kill(proc.pid, signal.SIGKILL) # force kill pool broker
+            eventually(proc.is_alive, False, timeout=10)
+
+        try:
+            eventually(pid_running(res.value), False,
+                timeout=15, poll_interval=0.1)
+        except Exception:
+            os.kill(res.value, signal.SIGTERM) # clean up
+            raise
+
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # pool test helpers
 

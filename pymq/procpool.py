@@ -147,6 +147,7 @@ class WorkerProxy(object):
         self.thread.join()
 
     def _worker_loop(self, args):
+        pid = os.getpid()
         proc = None
         queue = self.queue
 
@@ -154,7 +155,7 @@ class WorkerProxy(object):
             if proc is None or not proc.is_alive():
                 # start new worker process
                 cn, cx = Pipe()
-                proc = run_in_subprocess(worker_process, cx, *args)
+                proc = run_in_subprocess(worker_process, pid, cx, *args)
                 self.pid = proc.pid
 
             task, return_to_pool = queue.get()
@@ -199,18 +200,23 @@ class WorkerProxy(object):
         return 'WorkerProxy-%s' % self.pid
 
 
-def worker_process(cn, url, init, init_args, init_kw, max_worker_tasks):
+def worker_process(parent_pid, cn, url,
+        init, init_args, init_kw, max_worker_tasks):
     broker = get_broker(url)
     init(broker, *init_args, **init_kw)
-    log.info('Worker-%s initialized', os.getpid())
+    log.info('Worker-%s started', os.getpid())
     task_count = 0
     while True:
-        # TODO stop worker if parent dies
+        while not cn.poll(WORKER_POLL_INTERVAL):
+            if os.getppid() != parent_pid:
+                log.error('abort: parent process died')
+                return
+
         task = cn.recv()
         if task is STOP:
             break
 
-        broker.invoke(*task) # may never return (due to segfault in worker)
+        broker.invoke(*task)
 
         task_count += 1
         if max_worker_tasks is None or task_count < max_worker_tasks:
@@ -218,6 +224,7 @@ def worker_process(cn, url, init, init_args, init_kw, max_worker_tasks):
         else:
             cn.send(STOP) # signal task completion, worker stopping
             break
+
     log.info('Worker-%s stopped', os.getpid())
 
 

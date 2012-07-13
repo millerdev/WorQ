@@ -77,12 +77,13 @@ class TimeoutLock(object):
     def release(self):
         self.lock.release()
 
-def eventually(get_value, value, timeout=1):
+def eventually(get_value, value, timeout=1, poll_interval=0):
     end = time.time() + timeout
     while time.time() < end:
         result = get_value()
         if result == value:
             return
+        time.sleep(poll_interval)
     raise AssertionError('eventually timeout: %r != %r' % (result, value))
 
 @contextmanager
