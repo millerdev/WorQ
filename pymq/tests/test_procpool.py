@@ -5,7 +5,7 @@ import signal
 import sys
 from contextlib import contextmanager
 from nose.tools import nottest
-from os.path import exists, join
+from os.path import dirname, exists, join
 from pymq import get_broker, queue
 from pymq.procpool import WorkerPool, Error, run_in_subprocess
 from pymq.task import Task, TaskSet
@@ -13,9 +13,10 @@ from pymq.tests.util import assert_raises, eq_, eventually, tempdir, with_urls
 
 log = logging.getLogger(__name__)
 
+WAIT = 10 # default wait timeout (1 minute)
 
 def worker_pool(url, init_func, init_args, workers=1):
-    logging_config(init_args[-1], 'Broker-%s' % os.getpid())
+    process_config(init_args[-1], 'Broker-%s' % os.getpid())
 
     with discard_tasks(url):
         pool = WorkerPool(url, get_task_timeout=1, workers=workers)
@@ -26,7 +27,7 @@ def worker_pool(url, init_func, init_args, workers=1):
 def test_WorkerPool_sigterm(url):
 
     def init_worker(broker, tmp, logpath):
-        logging_config(logpath, 'Worker-%s' % os.getpid())
+        process_config(logpath, 'Worker-%s' % os.getpid())
 
         @broker.expose
         def func(arg, lock=None):
@@ -67,17 +68,18 @@ def test_WorkerPool_sigterm(url):
             touch(join(tmp, 'func.unlock')) # allow func to proceed
 
             eventually(reader(tmp, 'func.out'), 'text')
-            eventually(verify_shutdown(proc), True, timeout=10)
+            eventually(verify_shutdown(proc), True, timeout=WAIT)
 
 
 @with_urls(exclude='memory')
 def test_WorkerPool_start_twice(url):
-    init_worker = lambda url:None
+    init_worker = lambda broker:None
 
     pool = WorkerPool(url, get_task_timeout=1, workers=1)
     with start_pool(pool, init_worker):
         with assert_raises(Error):
             pool.start(init_worker, handle_sigterm=False)
+#    assert 0, os.getpid()
 
 
 @with_urls(exclude='memory')
@@ -99,20 +101,21 @@ def test_WorkerPool_max_worker_tasks(url):
 
         q = queue(url)
 
-        t = TaskSet(result_timeout=3)
+        t = TaskSet(result_timeout=WAIT)
         for n in range(5):
             t.add(q.func)
 
         res = t(q.results)
-        assert res.wait(timeout=10, poll_interval=0.01), 'task not completed'
+        assert res.wait(WAIT), repr(res)
 
         results = res.value
         assert isinstance(results, list), results
         eq_([r[1] for r in results], [1, 2, 3, 1, 2])
         eq_(len(set(r[0] for r in results)), 2)
+    assert 0, os.getpid()
 
 
-@nottest # this is a very slow test, and doesn't test that much
+@nottest # this is a very slow test, and doesn't seem that important
 @with_urls(exclude='memory')
 def test_WorkerPool_crashed_worker(url):
     def init_worker(broker):
@@ -122,23 +125,21 @@ def test_WorkerPool_crashed_worker(url):
             log.warn('alone we crash')
             sys.exit()
 
-        @broker.expose
-        def pid():
-            return os.getpid()
+        broker.expose(os.getpid)
 
     pool = WorkerPool(url, get_task_timeout=1, workers=1)
     with start_pool(pool, init_worker):
 
         q = queue(url)
 
-        res = Task(q.pid, result_timeout=3)()
-        assert res.wait(timeout=10, poll_interval=0.01), 'first not completed'
+        res = Task(q.getpid, result_timeout=WAIT)()
+        assert res.wait(WAIT), repr(res)
         pid = res.value
 
         q.kill_worker()
 
-        res = Task(q.pid, result_timeout=3)()
-        assert res.wait(timeout=20, poll_interval=0.1), 'second not completed'
+        res = Task(q.getpid, result_timeout=WAIT)()
+        assert res.wait(WAIT), repr(res)
         assert res.value != pid, pid
 
 
@@ -154,11 +155,9 @@ def test_WorkerPool_worker_shutdown_on_parent_die(url):
         return is_process_running
 
     def init_worker(broker, tmp, logpath):
-        logging_config(logpath, 'Worker-%s' % os.getpid())
+        process_config(logpath, 'Worker-%s' % os.getpid())
 
-        @broker.expose
-        def pid():
-            return os.getpid()
+        broker.expose(os.getpid)
 
         import pymq.procpool
         pymq.procpool.WORKER_POLL_INTERVAL = 0.1
@@ -170,17 +169,15 @@ def test_WorkerPool_worker_shutdown_on_parent_die(url):
 
         with printlog(logpath), force_kill_on_exit(proc):
 
-            q = queue(url)
+            res = Task(queue(url).getpid, result_timeout=WAIT)()
+            assert res.wait(WAIT), repr(res)
 
-            res = Task(q.pid, result_timeout=10)()
-            assert res.wait(timeout=30, poll_interval=0.01), 'not completed'
-
-            os.kill(proc.pid, signal.SIGKILL) # force kill pool broker
-            eventually(proc.is_alive, False, timeout=10)
+            os.kill(proc.pid, signal.SIGKILL) # force kill pool master
+            eventually(proc.is_alive, False, timeout=WAIT)
 
         try:
             eventually(pid_running(res.value), False,
-                timeout=15, poll_interval=0.1)
+                timeout=WAIT, poll_interval=0.1)
         except Exception:
             os.kill(res.value, signal.SIGTERM) # clean up
             raise
@@ -188,7 +185,9 @@ def test_WorkerPool_worker_shutdown_on_parent_die(url):
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # pool test helpers
 
-def logging_config(logpath, procname):
+def process_config(logpath, procname):
+    import pymq.procpool
+    pymq.procpool.WORKER_POLL_INTERVAL = 1
     logging.config.dictConfig({
         'formatters': {
             'brief': {
@@ -211,6 +210,7 @@ def logging_config(logpath, procname):
         'disable_existing_loggers': False,
         'version': 1,
     })
+    log.info('WORKER_POLL_INTERVAL = %s', pymq.procpool.WORKER_POLL_INTERVAL)
 
 def touch(path, data=''):
     with open(path, 'w') as f:
@@ -242,11 +242,19 @@ def printlog(logpath, heading='pool logging output:'):
 @contextmanager
 def start_pool(pool, init_worker, init_args=(), init_kw=None, **kw):
     def logging_init(broker, _logpath, _init, *args, **kw):
-        logging_config(_logpath, 'Worker-%s' % os.getpid())
+        if exists(dirname(_logpath)):
+            process_config(_logpath, 'Worker-%s' % os.getpid())
+        else:
+            # worker was probably orphaned
+            sys.exit()
         _init(broker, *args, **kw)
+
     if init_kw is None:
         init_kw = {}
     with tempdir() as tmp:
+
+        assert exists(tmp), tmp
+
         logpath = join(tmp, 'log')
         init_kw.update(_logpath=logpath, _init=init_worker)
         with discard_tasks(pool.broker_url), printlog(logpath):
@@ -275,7 +283,7 @@ def force_kill_on_exit(proc):
         raise
     finally:
         if proc.is_alive():
-            proc.join(10)
+            proc.join(WAIT)
             if proc.is_alive():
                 # force kill
                 os.kill(proc.pid, signal.SIGKILL)

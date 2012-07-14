@@ -11,6 +11,7 @@ import logging
 import os
 import sys
 import time
+from functools import partial
 from multiprocessing import Pool, Process, Pipe, cpu_count
 from pymq import get_broker
 from pymq.core import DAY
@@ -19,7 +20,7 @@ from threading import Thread
 
 log = logging.getLogger(__name__)
 
-STOP = type('STOP', (object,), {})
+STOP = 'STOP'
 WORKER_POLL_INTERVAL = 30
 
 class Error(Exception): pass
@@ -52,7 +53,8 @@ class WorkerPool(object):
         self.workers = workers
         self.get_task_timeout = get_task_timeout
         self.max_worker_tasks = max_worker_tasks
-        self._workers = ThreadQueue()
+        self._workers = []
+        self._worker_queue = ThreadQueue()
         self._running = False
 
     def start(self, init_func, init_args=(), init_kwargs={}, handle_sigterm=1):
@@ -77,7 +79,8 @@ class WorkerPool(object):
         for n in range(self.workers):
             worker = WorkerProxy(self.broker_url,
                 init_func, init_args, init_kwargs, self.max_worker_tasks)
-            self._workers.put(worker)
+            self._workers.append(worker)
+            self._worker_queue.put(worker)
 
         self._consumer_thread = Thread(target=self._consume_tasks)
         self._consumer_thread.start()
@@ -97,11 +100,11 @@ class WorkerPool(object):
         timeout = self.get_task_timeout
         broker = get_broker(self.broker_url)
         get_task = broker.messages.get
-        get_worker = self._workers.get
-        put_worker = self._workers.put
+        get_worker = self._worker_queue.get
+        put_worker = self._worker_queue.put
         while True:
             worker = get_worker()
-            if worker is STOP:
+            if worker == STOP:
                 break
             # TODO handle error (e.g., queue went away)
             task = get_task(timeout)
@@ -122,10 +125,16 @@ class WorkerPool(object):
         self._running = False
 
         log.info('shutting down...')
-        drain_queue(self._workers, WorkerProxy.terminate)
-        self._workers.put(STOP)
+        while True:
+            try:
+                item = self._worker_queue.get_nowait()
+            except Empty:
+                break
+        self._worker_queue.put(STOP)
         self._consumer_thread.join()
-        drain_queue(self._workers, WorkerProxy.terminate)
+        self._worker_queue = ThreadQueue()
+        for worker in self._workers:
+            worker.terminate()
         log.info('worker pool stopped')
         return True
 
@@ -147,11 +156,13 @@ class WorkerProxy(object):
         self.thread.join()
 
     def _proxy_loop(self, args):
+        is_debug = partial(log.isEnabledFor, logging.DEBUG)
         pid = os.getpid()
         proc = None
         queue = self.queue
 
         while True:
+            # check for STOP in queue ???
             if proc is None or not proc.is_alive():
                 # start new worker process
                 cn, cx = Pipe()
@@ -159,17 +170,19 @@ class WorkerProxy(object):
                 self.pid = proc.pid
 
             task, return_to_pool = queue.get()
-            if task is STOP:
+            if task == STOP:
                 try:
                     if proc is not None:
                         cn.send(STOP)
                         cn.close()
                         proc.join()
                 except Exception:
-                    log.error('%s failed to shutdown cleanly', self, exc_info=1)
+                    log.error('%s failed to stop cleanly',
+                        str(self), exc_info=True)
                     raise
+                else:
+                    log.debug('terminated %s', str(self))
                 finally:
-                    log.debug('terminated %s', self)
                     self.pid = '%s-terminated' % self.pid
                 break
 
@@ -189,8 +202,9 @@ class WorkerProxy(object):
                 proc = None
                 cn.close()
             else:
-                log.debug('%s completed task', self)
-                if status is STOP:
+                if is_debug():
+                    log.debug('%s completed task', str(self))
+                if status == STOP:
                     proc = None
                     cn.close()
             finally:
@@ -209,11 +223,11 @@ def worker_process(parent_pid, cn, url,
     while True:
         while not cn.poll(WORKER_POLL_INTERVAL):
             if os.getppid() != parent_pid:
-                log.error('abort: parent process died')
+                log.error('abort: parent process changed')
                 return
 
         task = cn.recv()
-        if task is STOP:
+        if task == STOP:
             break
 
         broker.invoke(*task)
@@ -228,15 +242,6 @@ def worker_process(parent_pid, cn, url,
             break
 
     log.info('Worker-%s stopped', os.getpid())
-
-
-def drain_queue(queue, handle_item):
-    while True:
-        try:
-            item = queue.get_nowait()
-        except Empty:
-            break
-        handle_item(item)
 
 
 def setup_exit_handler():
