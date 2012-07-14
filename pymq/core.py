@@ -232,9 +232,6 @@ class AbstractResultStore(object):
     def set_result(self, task_id, message, timeout):
         """Persist serialized result message.
 
-        Must be implemented by each broker implementation. Not normally called
-        by user code.
-
         :param task_id: Unique task identifier string.
         :param message: Serialized result message.
         :param timeout: Number of seconds to persist the result before
@@ -245,9 +242,6 @@ class AbstractResultStore(object):
     def pop_result(self, task_id):
         """Pop serialized result message from persistent storage.
 
-        Must be implemented by each broker implementation. Not normally called
-        by user code.
-
         :param task_id: Unique task identifier string.
         :returns: The result message; None if not found.
         """
@@ -255,9 +249,6 @@ class AbstractResultStore(object):
 
     def set_status(self, task_id, message, timeout):
         """Persist serialized task status
-
-        Must be implemented by each broker implementation. Not normally called
-        by user code.
 
         :param task_id: Unique task identifier string.
         :param message: (string) Serialized status object.
@@ -269,9 +260,6 @@ class AbstractResultStore(object):
     def pop_status(self, task_id):
         """Pop serialized task status
 
-        Must be implemented by each broker implementation. Not normally called
-        by user code.
-
         :param task_id: Unique task identifier string.
         :returns: (string) Serialized status object.
         :raises: KeyError if there is no status for the given task id.
@@ -281,9 +269,8 @@ class AbstractResultStore(object):
     def update(self, taskset_id, num_tasks, message, timeout):
         """Update the result set for a task set, return all results if complete
 
-        Must be implemented by each broker implementation. Not normally called
-        by user code. This operation is atomic, meaning that only one caller
-        will ever be returned a value other than None for a given `taskset_id`.
+        This operation is atomic, meaning that only one caller will ever be
+        returned a value other than None for a given `taskset_id`.
 
         :param taskset_id: (string) The taskset unique identifier.
         :param num_tasks: (int) Number of tasks in the set.
