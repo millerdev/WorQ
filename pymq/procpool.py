@@ -20,7 +20,7 @@ from threading import Thread
 log = logging.getLogger(__name__)
 
 STOP = type('STOP', (object,), {})
-WORKER_POLL_INTERVAL = 10
+WORKER_POLL_INTERVAL = 30
 
 class Error(Exception): pass
 
@@ -135,7 +135,7 @@ class WorkerProxy(object):
     def __init__(self, *args):
         self.pid = 'not-started'
         self.queue = ThreadQueue()
-        self.thread = Thread(target=self._worker_loop, args=(args,))
+        self.thread = Thread(target=self._proxy_loop, args=(args,))
         self.thread.start()
 
     def execute(self, task, return_to_pool):
@@ -146,7 +146,7 @@ class WorkerProxy(object):
         self.queue = None
         self.thread.join()
 
-    def _worker_loop(self, args):
+    def _proxy_loop(self, args):
         pid = os.getpid()
         proc = None
         queue = self.queue
@@ -205,7 +205,7 @@ def worker_process(parent_pid, cn, url,
     broker = get_broker(url)
     init(broker, *init_args, **init_kw)
     log.info('Worker-%s started', os.getpid())
-    task_count = 0
+    task_count = 1
     while True:
         while not cn.poll(WORKER_POLL_INTERVAL):
             if os.getppid() != parent_pid:
@@ -218,8 +218,10 @@ def worker_process(parent_pid, cn, url,
 
         broker.invoke(*task)
 
-        task_count += 1
-        if max_worker_tasks is None or task_count < max_worker_tasks:
+        if max_worker_tasks is None:
+            cn.send(None) # signal task completion
+        elif task_count < max_worker_tasks:
+            task_count += 1
             cn.send(None) # signal task completion
         else:
             cn.send(STOP) # signal task completion, worker stopping
