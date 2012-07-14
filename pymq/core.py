@@ -126,7 +126,7 @@ class Broker(object):
             if 'taskset' in options:
                 self.process_taskset(queue, options['taskset'], result)
             elif result_status or 'result_timeout' in options:
-                message = dumps([result])
+                message = dumps(result)
                 self.results.set_result(task_id, message, timeout)
 
     def process_taskset(self, queue, taskset, result):
@@ -136,8 +136,8 @@ class Broker(object):
                 and isinstance(result, TaskFailure)):
             # suboptimal: pending tasks in the set will continue to be executed
             # and their results will be persisted if they succeed.
-            message = dumps([TaskFailure(
-                task_name, queue, taskset_id, 'subtask(s) failed')])
+            message = dumps(TaskFailure(
+                task_name, queue, taskset_id, 'subtask(s) failed'))
             self.results.set_result(taskset_id, message, timeout)
         else:
             results = self.results.update(
@@ -212,11 +212,19 @@ class AbstractResultStore(object):
         """Return a DeferredResult object for the given task id"""
         return DeferredResult(self, task_id)
 
-    def pop(self, task_id):
-        """Pop and deserialize the result object for the given task id"""
-        message = self.pop_result(task_id)
+    def pop(self, task_id, timeout=0):
+        """Pop and deserialize the result object for the given task id
+
+        :param task_id: Unique task identifier string.
+        :param timeout: Length of time to wait for the result. The default
+            behavior is to return immediately (no wait). Wait indefinitely
+            if None (dangerous).
+        :returns: The deserialized result object.
+        :raises: KeyError if the result was not available.
+        """
+        message = self.pop_result(task_id, timeout)
         if message is None:
-            return None
+            raise KeyError(task_id)
         return loads(message)
 
     def status(self, task_id):
@@ -239,10 +247,12 @@ class AbstractResultStore(object):
         """
         raise NotImplementedError('abstract method')
 
-    def pop_result(self, task_id):
+    def pop_result(self, task_id, timeout):
         """Pop serialized result message from persistent storage.
 
         :param task_id: Unique task identifier string.
+        :param timeout: Length of time to wait for the result. Wait indefinitely
+            if None. Return immediately if timeout is zero (0).
         :returns: The result message; None if not found.
         """
         raise NotImplementedError('abstract method')

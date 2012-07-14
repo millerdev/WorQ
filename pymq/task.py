@@ -133,17 +133,12 @@ class TaskFailure(Exception):
 class DeferredResult(object):
     """Deferred result object
 
-    Meaningful attributes:
-    - value: The result value. This is set when evaluating the boolean value of
-      the DeferredResult object after the task completes. The value of this
-      attribute will be an instance of TaskFailure if the task could not be
-      invoked or raised an error.
+    Not thread-safe.
     """
 
     def __init__(self, store, task_id):
         self.store = store
         self.id = task_id
-        self._completed = False
 
     @property
     def value(self):
@@ -166,36 +161,33 @@ class DeferredResult(object):
             pass
         return self._status
 
-    def wait(self, timeout=None, poll_interval=1):
+    def wait(self, timeout):
         """Wait for the task result.
 
-        This method polls the result store. Use carefully. A task calling this
-        method (waiting on the result of a task being executed by the
-        same group of workers as the waiting task) may result in dead lock.
+        Use this method wisely. A task calling this method, waiting on the
+        result of another task being executed by the same group of workers
+        as the waiting task, may result in dead lock of the entire system.
 
-        :param timeout: Number of seconds to wait. Wait forever by default.
-        :param poll_interval: Number of seconds to sleep between polling the
-            result store. Default 1 second.
-        :returns: True if the task completed, otherwise False.
+        :param timeout: Number of seconds to wait. A value of None will wait
+            indefinitely, but this is dangerous since the worker may go away
+            without notice (due to loss of power, etc.) causing this method
+            to deadlock.
+        :returns: True if the result is available, otherwise False.
         """
-        if timeout is None:
-            while not self:
-                time.sleep(poll_interval)
-        else:
-            end = time.time() + timeout
-            while not self and end > time.time():
-                time.sleep(poll_interval)
-        return self._completed
+        if not hasattr(self, '_value'):
+            try:
+                self._value = self.store.pop(self.id, timeout)
+            except KeyError:
+                pass
+        return hasattr(self, '_value')
 
     def __nonzero__(self):
         """Return True if the result has arrived, otherwise False."""
-        if not self._completed:
-            value = self.store.pop(self.id)
-            if value is None:
+        if not hasattr(self, '_value'):
+            try:
+                self._value = self.store.pop(self.id)
+            except KeyError:
                 return False
-            assert len(value) == 1, value
-            self._value = value[0]
-            self._completed = True
         return True
 
     def __repr__(self):
@@ -226,8 +218,11 @@ class TaskSet(object):
         >>> for arg in [0, 1, 2, 3]:
         ...     t.add(q.plus_ten, arg)
         ...
-        >>> t(q.sum)
-        <DeferredResult value=46>
+        >>> res = t(q.sum)
+        >>> res.wait(60)
+        True
+        >>> res.value
+        46
 
     TaskSet algorithm:
     - Head tasks (added with .add) are enqueued to be executed in parallel

@@ -3,7 +3,7 @@ from __future__ import absolute_import
 import logging
 import redis
 from urlparse import urlparse
-from pymq.core import AbstractMessageQueue, AbstractResultStore
+from pymq.core import AbstractMessageQueue, AbstractResultStore, DAY
 
 log = logging.getLogger(__name__)
 
@@ -67,14 +67,19 @@ class RedisResults(RedisBackendMixin, AbstractResultStore):
 
     def set_result(self, task_id, message, timeout):
         key = RESULT_PATTERN % task_id
-        self.redis.setex(key, timeout, message)
-
-    def pop_result(self, task_id):
-        key = RESULT_PATTERN % task_id
         pipe = self.redis.pipeline()
-        pipe.get(key)
-        pipe.delete(key)
-        return pipe.execute()[0]
+        pipe.rpush(key, message)
+        pipe.expire(key, timeout)
+        pipe.execute()
+
+    def pop_result(self, task_id, timeout):
+        key = RESULT_PATTERN % task_id
+        if timeout == 0:
+            return self.redis.lpop(key)
+        if timeout is None:
+            timeout = 0
+        result = self.redis.blpop([key], timeout=timeout)
+        return result if result is None else result[1]
 
     def set_status(self, task_id, message, timeout):
         key = STATUS_PATTERN % task_id

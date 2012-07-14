@@ -2,6 +2,8 @@ from pymq import get_broker, queue, Task, TaskSet, TaskFailure, TaskSpace
 from pymq.tests.util import (assert_raises, eq_, eventually, thread_worker,
     with_urls)
 
+WAIT = 60 # default wait time (1 minute)
+
 @with_urls
 def test_TaskSet_on_error_FAIL(url):
 
@@ -17,12 +19,12 @@ def test_TaskSet_on_error_FAIL(url):
         # -- task-invoking code, usually another process --
         q = queue(url)
 
-        tasks = TaskSet(result_timeout=5)
+        tasks = TaskSet(result_timeout=WAIT)
         tasks.add(q.func, 1)
         tasks.add(q.func, 0)
         tasks.add(q.func, 2)
         res = tasks(q.func)
-        res.wait(timeout=1, poll_interval=0)
+        res.wait(timeout=WAIT)
 
         with assert_raises(TaskFailure,
                 'func [default:%s] subtask(s) failed' % res.id):

@@ -10,6 +10,8 @@ from pymq.core import _StopWorker
 
 log = logging.getLogger(__name__)
 
+DEFAULT_TIMEOUT = 10
+
 TEST_URLS = [
     'memory://',
     'redis://localhost:16379/0', # NOTE non-standard port
@@ -68,7 +70,7 @@ class TimeoutLock(object):
         self.lock = Lock()
         if locked:
             self.lock.acquire()
-    def acquire(self, timeout=1):
+    def acquire(self, timeout=DEFAULT_TIMEOUT):
         end = time.time() + timeout
         while time.time() < end:
             if self.lock.acquire(False):
@@ -77,7 +79,7 @@ class TimeoutLock(object):
     def release(self):
         self.lock.release()
 
-def eventually(get_value, value, timeout=1, poll_interval=0):
+def eventually(get_value, value, timeout=DEFAULT_TIMEOUT, poll_interval=0):
     end = time.time() + timeout
     while time.time() < end:
         result = get_value()

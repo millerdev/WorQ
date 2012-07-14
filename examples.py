@@ -4,6 +4,7 @@ from pymq.tests.test_examples import example
 from pymq.tests.util import (assert_raises, eq_, eventually,
     thread_worker, TimeoutLock)
 
+WAIT = 60 # default wait time (1 minute)
 
 @example
 def simple(url):
@@ -77,7 +78,7 @@ def named_queues(url):
 
 
 @example
-def busy_wait(url):
+def wait_for_result(url):
 
     def func(arg):
         return arg
@@ -89,10 +90,10 @@ def busy_wait(url):
         # -- task-invoking code, usually another process --
         q = queue(url)
 
-        func_task = Task(q.func, result_timeout=3)
+        func_task = Task(q.func, result_timeout=WAIT)
         res = func_task('arg')
 
-        completed = res.wait(timeout=1, poll_interval=0)
+        completed = res.wait(WAIT)
 
         assert completed, repr(res)
         eq_(res.value, 'arg')
@@ -134,7 +135,7 @@ def result_status(url):
         eq_(repr(res), "<DeferredResult %s [10]>" % res.id)
 
         lock.release()
-        completed = res.wait(timeout=1, poll_interval=0)
+        completed = res.wait(WAIT)
 
         assert completed, repr(res)
         eq_(res.value, 'arg')
@@ -150,9 +151,9 @@ def no_such_task(url):
         # -- task-invoking code, usually another process --
         q = queue(url)
 
-        res = Task(q.func, result_timeout=3)('arg')
+        res = Task(q.func, result_timeout=WAIT)('arg')
 
-        completed = res.wait(timeout=1, poll_interval=0)
+        completed = res.wait(WAIT)
 
         assert completed, repr(res)
         eq_(repr(res), '<DeferredResult %s failed>' % res.id)
@@ -174,8 +175,8 @@ def worker_interrupted(url):
         # -- task-invoking code, usually another process --
         q = queue(url)
 
-        res = Task(q.func, result_timeout=3)('arg')
-        completed = res.wait(timeout=1, poll_interval=0)
+        res = Task(q.func, result_timeout=WAIT)('arg')
+        completed = res.wait(WAIT)
 
         assert completed, repr(res)
         eq_(repr(res), '<DeferredResult %s failed>' % res.id)
@@ -197,8 +198,8 @@ def task_error(url):
         # -- task-invoking code, usually another process --
         q = queue(url)
 
-        res = Task(q.func, result_timeout=3)('arg')
-        completed = res.wait(timeout=1, poll_interval=0)
+        res = Task(q.func, result_timeout=WAIT)('arg')
+        completed = res.wait(WAIT)
 
         assert completed, repr(res)
         eq_(repr(res), '<DeferredResult %s failed>' % res.id)
@@ -221,13 +222,14 @@ def taskset(url):
         # -- task-invoking code, usually another process --
         q = queue(url)
 
-        tasks = TaskSet(result_timeout=5)
+        tasks = TaskSet(result_timeout=WAIT)
         tasks.add(q.func, 1)
         tasks.add(q.func, 2)
         tasks.add(q.func, 3)
         res = tasks(q.sum)
 
-        eventually((lambda: res.value if res else None), 6)
+        assert res.wait(WAIT), repr(res)
+        eq_(res.value, 6)
 
 
 @example
@@ -249,14 +251,15 @@ def taskset_composition(url):
         set_0.add(q.func, 2)
         set_0.add(q.func, 3)
 
-        set_1 = TaskSet(result_timeout=5)
+        set_1 = TaskSet(result_timeout=WAIT)
         set_1.add(q.func, 4)
         set_1.add(set_0, q.sum)
         set_1.add(q.func, 5)
 
         res = set_1(q.sum)
 
-        eventually((lambda: res.value if res else None), 15)
+        assert res.wait(WAIT), repr(res)
+        eq_(res.value, 15)
 
 
 @example
@@ -280,12 +283,12 @@ def taskset_with_failed_subtasks(url):
         # -- task-invoking code, usually another process --
         q = queue(url)
 
-        tasks = TaskSet(result_timeout=5, on_error=TaskSet.PASS)
+        tasks = TaskSet(result_timeout=WAIT, on_error=TaskSet.PASS)
         tasks.add(q.func, 1)
         tasks.add(q.func, 0)
         tasks.add(q.func, 2)
         res = tasks(q.func)
-        res.wait(timeout=1, poll_interval=0)
+        res.wait(WAIT)
 
         fail = TaskFailure(
             'func', 'default', res.value[1].task_id, 'Exception: zero fail!')
@@ -294,18 +297,18 @@ def taskset_with_failed_subtasks(url):
 
 @example
 def task_namespaces(url):
-    state = []
+    state = set()
     __name__ = 'module.path'
 
     ts = TaskSpace(__name__)
 
     @ts.task
     def foo():
-        state.append('foo')
+        state.add('foo')
 
     @ts.task
     def bar(arg):
-        state.append(arg)
+        state.add(arg)
 
     broker = get_broker(url)
     broker.expose(ts)
@@ -317,12 +320,12 @@ def task_namespaces(url):
         q.foo()
         q.bar(1)
 
-        eventually((lambda:state), ['foo', 1])
+        eventually((lambda:state), {'foo', 1})
 
 
 @example
 def more_namespaces(url):
-    state = []
+    state = set()
 
     foo = TaskSpace('foo')
     bar = TaskSpace('foo.bar')
@@ -330,19 +333,19 @@ def more_namespaces(url):
 
     @foo.task
     def join(arg):
-        state.append('foo-join %s' % arg)
+        state.add('foo-join %s' % arg)
 
     @bar.task
     def kick(arg):
-        state.append('bar-kick %s' % arg)
+        state.add('bar-kick %s' % arg)
 
     @baz.task
     def join(arg):
-        state.append('baz-join %s' % arg)
+        state.add('baz-join %s' % arg)
 
     @baz.task
     def kick(arg):
-        state.append('baz-kick %s' % arg)
+        state.add('baz-kick %s' % arg)
 
     broker = get_broker(url)
     broker.expose(foo)
@@ -358,9 +361,9 @@ def more_namespaces(url):
         q.foo.bar.baz.join(3)
         q.foo.bar.baz.kick(4)
 
-        eventually((lambda:state), [
+        eventually((lambda:state), {
             'foo-join 1',
             'bar-kick 2',
             'baz-join 3',
             'baz-kick 4',
-        ])
+        })

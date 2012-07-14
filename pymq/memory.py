@@ -1,4 +1,7 @@
-"""In-memory message queue and result store, normally used for testing."""
+"""In-memory message queue and result store.
+
+MemoryResults is not suitable for long-running processes that use TaskSets.
+"""
 import logging
 from pymq.core import AbstractMessageQueue, AbstractResultStore, DEFAULT
 from Queue import Queue, Empty
@@ -59,8 +62,6 @@ class MemoryResults(AbstractResultStore):
     def __init__(self, *args, **kw):
         super(MemoryResults, self).__init__(*args, **kw)
         self.results_by_task = WeakValueDictionary()
-        self.results = WeakKeyDictionary()
-        self.statuses = WeakKeyDictionary()
         self.tasksets = {}
 
     def deferred_result(self, task_id):
@@ -68,27 +69,36 @@ class MemoryResults(AbstractResultStore):
         if result is None:
             result = super(MemoryResults, self).deferred_result(task_id)
             self.results_by_task[task_id] = result
+            result.__status = None
+            result.__result = Queue()
         return result
 
     def set_result(self, task_id, message, timeout):
         result_obj = self.results_by_task[task_id]
-        self.results[result_obj] = message
+        result_obj.__result.put(message)
 
-    def pop_result(self, task_id):
+    def pop_result(self, task_id, timeout):
         result_obj = self.results_by_task[task_id]
-        return self.results.pop(result_obj, None)
+        try:
+            if timeout == 0:
+                result = result_obj.__result.get_nowait()
+            else:
+                result = result_obj.__result.get(timeout=timeout)
+        except Empty:
+            result = None
+        return result
 
     def set_status(self, task_id, message, timeout):
         result_obj = self.results_by_task.get(task_id)
         if result_obj is not None:
-            self.statuses[result_obj] = message
+            result_obj.__status = message
 
     def pop_status(self, task_id):
         result_obj = self.results_by_task[task_id]
-        return self.statuses.pop(result_obj)
+        return result_obj.__status
 
     def update(self, taskset_id, num, message, timeout):
-        # not thread-safe and leaks memory if a taskset is not completed
+        """not thread-safe and leaks memory if a taskset is not completed"""
         value = self.tasksets.setdefault(taskset_id, [])
         value.append(message)
         if len(value) == num:
