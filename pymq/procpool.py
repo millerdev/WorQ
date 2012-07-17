@@ -11,8 +11,12 @@ import logging
 import os
 import sys
 import time
+import subprocess
 from functools import partial
-from multiprocessing import Pool, Process, Pipe, cpu_count
+from multiprocessing import Pipe, cpu_count, current_process
+from multiprocessing.process import AuthenticationString
+from multiprocessing.reduction import reduce_connection, rebuild_connection
+from cPickle import dump, load, HIGHEST_PROTOCOL, PicklingError
 from pymq import get_broker
 from pymq.core import DAY
 from Queue import Empty, Queue as ThreadQueue
@@ -21,6 +25,7 @@ from threading import Thread
 log = logging.getLogger(__name__)
 
 STOP = 'STOP'
+PYTHON_EXE = sys.executable
 WORKER_POLL_INTERVAL = 30
 
 class Error(Exception): pass
@@ -165,7 +170,8 @@ class WorkerProxy(object):
             # check for STOP in queue ???
             if proc is None or not proc.is_alive():
                 # start new worker process
-                cn, cx = Pipe()
+                child, parent = Pipe()
+                cx = _reduce_connection(parent) # HACK reduce for pickle
                 proc = run_in_subprocess(worker_process, pid, cx, *args)
                 self.pid = proc.pid
 
@@ -173,8 +179,8 @@ class WorkerProxy(object):
             if task == STOP:
                 try:
                     if proc is not None:
-                        cn.send(STOP)
-                        cn.close()
+                        child.send(STOP)
+                        child.close()
                         proc.join()
                 except Exception:
                     log.error('%s failed to stop cleanly',
@@ -187,12 +193,12 @@ class WorkerProxy(object):
                 break
 
             try:
-                cn.send(task)
-                while not cn.poll(WORKER_POLL_INTERVAL):
+                child.send(task)
+                while not child.poll(WORKER_POLL_INTERVAL):
                     if not proc.is_alive():
                         raise Error('unknown cause of death')
                     # TODO update result heartbeat
-                status = cn.recv()
+                status = child.recv()
             except Exception:
                 log.error('%s died unexpectedly', self, exc_info=True)
                 # NOTE could end up with zombie worker here if there was a
@@ -200,13 +206,13 @@ class WorkerProxy(object):
                 # Is that even possible? It should terminate itself when
                 # the pool is shutdown.
                 proc = None
-                cn.close()
+                child.close()
             else:
                 if is_debug():
                     log.debug('%s completed task', str(self))
                 if status == STOP:
                     proc = None
-                    cn.close()
+                    child.close()
             finally:
                 return_to_pool(self)
 
@@ -214,34 +220,121 @@ class WorkerProxy(object):
         return 'WorkerProxy-%s' % self.pid
 
 
-def worker_process(parent_pid, cn, url,
+def worker_process(parent_pid, reduced_cn, url,
         init, init_args, init_kw, max_worker_tasks):
     broker = get_broker(url)
     init(broker, *init_args, **init_kw)
     log.info('Worker-%s started', os.getpid())
     task_count = 1
+    parent = reduced_cn[0](*reduced_cn[1]) # HACK un-reduce connection
     while True:
-        while not cn.poll(WORKER_POLL_INTERVAL):
+        while not parent.poll(WORKER_POLL_INTERVAL):
             if os.getppid() != parent_pid:
                 log.error('abort: parent process changed')
                 return
 
-        task = cn.recv()
+        task = parent.recv()
         if task == STOP:
             break
 
         broker.invoke(*task)
 
         if max_worker_tasks is None:
-            cn.send(None) # signal task completion
+            parent.send(None) # signal task completion
         elif task_count < max_worker_tasks:
             task_count += 1
-            cn.send(None) # signal task completion
+            parent.send(None) # signal task completion
         else:
-            cn.send(STOP) # signal task completion, worker stopping
+            parent.send(STOP) # signal task completion, worker stopping
             break
 
     log.info('Worker-%s stopped', os.getpid())
+
+
+def run_in_subprocess(_func, *args, **kw):
+    """Call function with arguments in subprocess
+
+    All arguments to this function must be able to be pickled.
+
+    Use subprocess.Popen rather than multiprocessing.Process because we use
+    threads, which do not play nicely with fork. This was originally written
+    with multiprocessing.Process, which caused in intermittent deadlocks.
+    See http://bugs.python.org/issue6721
+
+    :returns: A subprocess.Popen object.
+    """
+    prog = 'from pymq.procpool import main; main()'
+    proc = subprocess.Popen([PYTHON_EXE, '-c', prog], stdin=subprocess.PIPE)
+    assert proc.stdout is None
+    assert proc.stderr is None
+    try:
+        dump((_func, args, kw), proc.stdin, HIGHEST_PROTOCOL)
+        proc.stdin.flush()
+    except IOError as e:
+        # copied from subprocess.Popen.communicate
+        if e.errno != errno.EPIPE and e.errno != errno.EINVAL:
+            raise
+    except PicklingError:
+        proc.terminate()
+        raise
+    return PopenProcess(proc)
+
+
+def main():
+    func, args, kw = load(sys.stdin)
+    try:
+        func(*args, **kw)
+    except Exception:
+        log.critical('subprocess crashed', exc_info=True)
+        raise
+
+
+def _reduce_connection(conn):
+    """Reduce a connection object so it can be pickled.
+
+    WARNING this puts the current process' authentication key in the data
+    to be pickled. Connections pickled with this connection should not be
+    sent over a network.
+
+    HACK work around multiprocessing connection authentication because
+    we are using subprocess.Popen instead of multiprocessing.Process to
+    spawn new child processes.
+
+    This will not be necessary when multiprocessing.Connection objects can be
+    pickled. See http://bugs.python.org/issue4892
+    """
+    obj = reduce_connection(conn)
+    assert obj[0] is rebuild_connection, obj
+    assert len(obj) == 2, obj
+    args = (bytes(current_process().authkey),) + obj[1]
+    return (_rebuild_connection, args)
+
+def _rebuild_connection(authkey, *args):
+    current_process().authkey = AuthenticationString(authkey)
+    return rebuild_connection(*args)
+
+
+class PopenProcess(object):
+    """Make a subprocess.Popen object more like multiprocessing.Process"""
+
+    def __init__(self, proc):
+        self._proc = proc
+
+    def is_alive(self):
+        return self._proc.poll() is None
+
+    def join(self, timeout=None):
+        if timeout is None:
+            self._proc.communicate()
+            return
+        end = time.time() + timeout
+        while time.time() < end:
+            if not self.is_alive():
+                return
+            time.sleep(0.01)
+
+    def __getattr__(self, name):
+        return getattr(self._proc, name)
 
 
 def setup_exit_handler():
@@ -258,16 +351,3 @@ def setup_exit_handler():
     else:
         import signal
         signal.signal(signal.SIGTERM, on_exit)
-
-
-def run_in_subprocess(_func, *args, **kw):
-    proc = Process(target=exclogger, args=(_func, args, kw))
-    proc.start()
-    return proc
-
-def exclogger(func, args, kw):
-    try:
-        func(*args, **kw)
-    except Exception:
-        log.critical('crash!', exc_info=True)
-        raise
