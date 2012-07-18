@@ -19,7 +19,7 @@ def worker_pool(url, init_func, init_args, workers=1):
     process_config(init_args[-1], 'Broker-%s' % os.getpid())
 
     with discard_tasks(url):
-        pool = WorkerPool(url, get_task_timeout=1, workers=workers)
+        pool = WorkerPool(url, workers=workers, get_task_timeout=1)
         pool.start(init_func, init_args)
 
 
@@ -64,7 +64,7 @@ def WorkerPool_sigterm_init_worker(broker, tmp, logpath):
 
 @with_urls(exclude='memory')
 def test_WorkerPool_start_twice(url):
-    pool = WorkerPool(url, get_task_timeout=1, workers=1)
+    pool = WorkerPool(url, workers=1, get_task_timeout=1)
     with start_pool(pool, WorkerPool_start_twice_init):
         with assert_raises(Error):
             pool.start(WorkerPool_start_twice_init, handle_sigterm=False)
@@ -75,7 +75,7 @@ def WorkerPool_start_twice_init(broker):
 
 @with_urls(exclude='memory')
 def test_WorkerPool_max_worker_tasks(url):
-    pool = WorkerPool(url, get_task_timeout=1, workers=1, max_worker_tasks=3)
+    pool = WorkerPool(url, workers=1, get_task_timeout=1, max_worker_tasks=3)
     with start_pool(pool, WorkerPool_max_worker_tasks_init_worker):
 
         q = queue(url)
@@ -108,7 +108,7 @@ def WorkerPool_max_worker_tasks_init_worker(broker):
 @nottest # this is a very slow test, and doesn't seem that important
 @with_urls(exclude='memory')
 def test_WorkerPool_crashed_worker(url):
-    pool = WorkerPool(url, get_task_timeout=1, workers=1)
+    pool = WorkerPool(url, workers=1, get_task_timeout=1)
     with start_pool(pool, WorkerPool_crashed_worker_init_worker):
 
         q = queue(url)
