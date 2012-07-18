@@ -1,9 +1,9 @@
 """Multi-process worker pool implementation
 
-Processes in the worq.procpool stack:
+Processes in the worq.pool.process stack:
     Producer - produces tasks to be executed
     Queue - message queue and results backend (redis)
-    Broker - worker pool manager
+    PoolManager - worker pool manager
     Worker - does the real work
 """
 
@@ -269,7 +269,7 @@ def run_in_subprocess(_func, *args, **kw):
 
     :returns: A subprocess.Popen object.
     """
-    prog = 'from worq.procpool import main; main()'
+    prog = 'from worq.pool.process import main; main()'
     # close_fds=True prevents intermittent deadlock in Popen
     # See http://bugs.python.org/issue2320
     proc = subprocess.Popen([PYTHON_EXE, '-c', prog],

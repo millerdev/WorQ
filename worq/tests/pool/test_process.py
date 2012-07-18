@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from nose.tools import nottest
 from os.path import dirname, exists, join
 from worq import get_broker, queue
-from worq.procpool import WorkerPool, Error, run_in_subprocess
+from worq.pool.process import WorkerPool, Error, run_in_subprocess
 from worq.task import Task, TaskSet
 from worq.tests.util import assert_raises, eq_, eventually, tempdir, with_urls
 
@@ -172,8 +172,8 @@ def WorkerPool_worker_shutdown_on_parent_die_init_worker(url, tmp, logpath):
 
     broker.expose(os.getpid)
 
-    import worq.procpool
-    worq.procpool.WORKER_POLL_INTERVAL = 0.1
+    import worq.pool.process as proc
+    proc.WORKER_POLL_INTERVAL = 0.1
 
     return broker
 
@@ -181,8 +181,8 @@ def WorkerPool_worker_shutdown_on_parent_die_init_worker(url, tmp, logpath):
 # pool test helpers
 
 def process_config(logpath, procname):
-    import worq.procpool
-    worq.procpool.WORKER_POLL_INTERVAL = 1
+    import worq.pool.process as proc
+    proc.WORKER_POLL_INTERVAL = 1
     logging.config.dictConfig({
         'formatters': {
             'brief': {
@@ -205,7 +205,7 @@ def process_config(logpath, procname):
         'disable_existing_loggers': False,
         'version': 1,
     })
-    log.info('WORKER_POLL_INTERVAL = %s', worq.procpool.WORKER_POLL_INTERVAL)
+    log.info('WORKER_POLL_INTERVAL = %s', proc.WORKER_POLL_INTERVAL)
 
 def touch(path, data=''):
     with open(path, 'w') as f:
