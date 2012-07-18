@@ -7,6 +7,7 @@ Processes in the pymq.procpool stack:
     Worker - does the real work
 """
 
+import errno
 import logging
 import os
 import sys
@@ -167,7 +168,6 @@ class WorkerProxy(object):
         queue = self.queue
 
         while True:
-            # check for STOP in queue ???
             if proc is None or not proc.is_alive():
                 # start new worker process
                 child, parent = Pipe()
@@ -201,18 +201,16 @@ class WorkerProxy(object):
                 status = child.recv()
             except Exception:
                 log.error('%s died unexpectedly', self, exc_info=True)
-                # NOTE could end up with zombie worker here if there was a
-                # problem communicating but the worker did not actually die.
-                # Is that even possible? It should terminate itself when
-                # the pool is shutdown.
-                proc = None
                 child.close()
+                proc.stdin.close()
+                proc = None
             else:
                 if is_debug():
                     log.debug('%s completed task', str(self))
                 if status == STOP:
-                    proc = None
                     child.close()
+                    proc.stdin.close()
+                    proc = None
             finally:
                 return_to_pool(self)
 
@@ -233,7 +231,11 @@ def worker_process(parent_pid, reduced_cn, url,
                 log.error('abort: parent process changed')
                 return
 
-        task = parent.recv()
+        try:
+            task = parent.recv()
+        except EOFError:
+            log.error('abort: parent fd closed')
+            break
         if task == STOP:
             break
 
@@ -264,7 +266,10 @@ def run_in_subprocess(_func, *args, **kw):
     :returns: A subprocess.Popen object.
     """
     prog = 'from pymq.procpool import main; main()'
-    proc = subprocess.Popen([PYTHON_EXE, '-c', prog], stdin=subprocess.PIPE)
+    # close_fds=True prevents intermittent deadlock in Popen
+    # See http://bugs.python.org/issue2320
+    proc = subprocess.Popen([PYTHON_EXE, '-c', prog],
+                            stdin=subprocess.PIPE, close_fds=True)
     assert proc.stdout is None
     assert proc.stderr is None
     try:
@@ -273,6 +278,7 @@ def run_in_subprocess(_func, *args, **kw):
     except IOError as e:
         # copied from subprocess.Popen.communicate
         if e.errno != errno.EPIPE and e.errno != errno.EINVAL:
+            proc.terminate()
             raise
     except PicklingError:
         proc.terminate()

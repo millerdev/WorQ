@@ -13,7 +13,7 @@ from pymq.tests.util import assert_raises, eq_, eventually, tempdir, with_urls
 
 log = logging.getLogger(__name__)
 
-WAIT = 10 # default wait timeout (1 minute)
+WAIT = 60 # default wait timeout (1 minute)
 
 def worker_pool(url, init_func, init_args, workers=1):
     process_config(init_args[-1], 'Broker-%s' % os.getpid())
