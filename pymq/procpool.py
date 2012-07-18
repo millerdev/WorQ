@@ -167,6 +167,21 @@ class WorkerProxy(object):
         proc = None
         queue = self.queue
 
+        def stop():
+            try:
+                if proc is not None:
+                    child.send(STOP)
+                    child.close()
+                    proc.join()
+            except Exception:
+                log.error('%s failed to stop cleanly',
+                    str(self), exc_info=True)
+                raise
+            else:
+                log.debug('terminated %s', str(self))
+            finally:
+                self.pid = '%s-terminated' % self.pid
+
         while True:
             if proc is None or not proc.is_alive():
                 # start new worker process
@@ -177,19 +192,7 @@ class WorkerProxy(object):
 
             task, return_to_pool = queue.get()
             if task == STOP:
-                try:
-                    if proc is not None:
-                        child.send(STOP)
-                        child.close()
-                        proc.join()
-                except Exception:
-                    log.error('%s failed to stop cleanly',
-                        str(self), exc_info=True)
-                    raise
-                else:
-                    log.debug('terminated %s', str(self))
-                finally:
-                    self.pid = '%s-terminated' % self.pid
+                stop()
                 break
 
             try:
@@ -299,7 +302,7 @@ def _reduce_connection(conn):
     """Reduce a connection object so it can be pickled.
 
     WARNING this puts the current process' authentication key in the data
-    to be pickled. Connections pickled with this connection should not be
+    to be pickled. Connections pickled with this function should not be
     sent over a network.
 
     HACK work around multiprocessing connection authentication because
