@@ -45,8 +45,9 @@ def test_WorkerPool_sigterm(url):
             eventually(reader(tmp, 'func.out'), 'text')
             eventually(verify_shutdown(proc), True, timeout=WAIT)
 
-def WorkerPool_sigterm_init_worker(broker, tmp, logpath):
+def WorkerPool_sigterm_init_worker(url, tmp, logpath):
     process_config(logpath, 'Worker-%s' % os.getpid())
+    broker = get_broker(url)
 
     @broker.expose
     def func(arg, lock=None):
@@ -61,16 +62,18 @@ def WorkerPool_sigterm_init_worker(broker, tmp, logpath):
 
         log.debug('func complete')
 
+    return broker
+
 
 @with_urls(exclude='memory')
 def test_WorkerPool_start_twice(url):
     pool = WorkerPool(url, workers=1, get_task_timeout=1)
-    with start_pool(pool, WorkerPool_start_twice_init):
+    with start_pool(pool, WorkerPool_start_twice_init_worker):
         with assert_raises(Error):
-            pool.start(WorkerPool_start_twice_init, handle_sigterm=False)
+            pool.start(WorkerPool_start_twice_init_worker, handle_sigterm=False)
 
-def WorkerPool_start_twice_init(broker):
-    pass
+def WorkerPool_start_twice_init_worker(url):
+    return get_broker(url)
 
 
 @with_urls(exclude='memory')
@@ -92,7 +95,8 @@ def test_WorkerPool_max_worker_tasks(url):
         eq_([r[1] for r in results], [1, 2, 3, 1])
         eq_(len(set(r[0] for r in results)), 2)
 
-def WorkerPool_max_worker_tasks_init_worker(broker):
+def WorkerPool_max_worker_tasks_init_worker(url):
+    broker = get_broker(url)
     calls = [0]
 
     @broker.expose
@@ -103,6 +107,8 @@ def WorkerPool_max_worker_tasks_init_worker(broker):
     @broker.expose
     def results(res):
         return res
+
+    return broker
 
 
 @nottest # this is a very slow test, and doesn't seem that important
@@ -123,7 +129,8 @@ def test_WorkerPool_crashed_worker(url):
         assert res.wait(WAIT), repr(res)
         assert res.value != pid, pid
 
-def WorkerPool_crashed_worker_init_worker(broker):
+def WorkerPool_crashed_worker_init_worker(url):
+    broker = get_broker(url)
 
     @broker.expose
     def kill_worker():
@@ -131,6 +138,8 @@ def WorkerPool_crashed_worker_init_worker(broker):
         sys.exit()
 
     broker.expose(os.getpid)
+
+    return broker
 
 
 @with_urls(exclude='memory')
@@ -157,13 +166,16 @@ def test_WorkerPool_worker_shutdown_on_parent_die(url):
             os.kill(res.value, signal.SIGTERM) # clean up
             raise
 
-def WorkerPool_worker_shutdown_on_parent_die_init_worker(broker, tmp, logpath):
+def WorkerPool_worker_shutdown_on_parent_die_init_worker(url, tmp, logpath):
     process_config(logpath, 'Worker-%s' % os.getpid())
+    broker = get_broker(url)
 
     broker.expose(os.getpid)
 
     import pymq.procpool
     pymq.procpool.WORKER_POLL_INTERVAL = 0.1
+
+    return broker
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # pool test helpers
@@ -231,13 +243,13 @@ def printlog(logpath, heading='pool logging output:'):
             with open(logpath) as f:
                 print f.read(),
 
-def _logging_init(broker, _logpath, _init, *args, **kw):
+def _logging_init(url, _logpath, _init, *args, **kw):
     if exists(dirname(_logpath)):
         process_config(_logpath, 'Worker-%s' % os.getpid())
     else:
         # worker was probably orphaned
         sys.exit()
-    _init(broker, *args, **kw)
+    return _init(url, *args, **kw)
 
 @contextmanager
 def start_pool(pool, init_worker, init_args=(), init_kw=None, **kw):

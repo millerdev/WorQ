@@ -46,7 +46,8 @@ class WorkerPool(object):
         before retiring the worker and spawning a new one in its place.
     """
 
-    def __init__(self, broker_url, workers=None,
+    def __init__(self, broker_url,
+            workers=None,
             get_task_timeout=10,
             max_worker_tasks=None,
         ):
@@ -223,11 +224,11 @@ class WorkerProxy(object):
 
 def worker_process(parent_pid, reduced_cn, url,
         init, init_args, init_kw, max_worker_tasks):
-    broker = get_broker(url)
-    init(broker, *init_args, **init_kw)
+    broker = init(url, *init_args, **init_kw)
     log.info('Worker-%s started', os.getpid())
     task_count = 1
     parent = reduced_cn[0](*reduced_cn[1]) # HACK un-reduce connection
+
     while True:
         while not parent.poll(WORKER_POLL_INTERVAL):
             if os.getppid() != parent_pid:
