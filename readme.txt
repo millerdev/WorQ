@@ -1,8 +1,14 @@
+WorQ - asynchronous Python task queue.
+
+-------------------------------------------------------------------------------
+
 TODO
 x Worker process pool
 x   - Controlled worker shutdown without loss of work
 xx Use multiprocessing.ProcessPool (look into process monitoring, dying, etc.)
 x Make task.wait block on queue result with timeout (use queue primitives rather than busy wait)
+- new name for project: WorQ
+- MIT license
 - Fix TODO items in procpool
 - Move pymq.procpool to pymq.pool.process
 - Include task name in repr of DeferredResult

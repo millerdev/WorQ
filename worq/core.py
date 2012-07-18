@@ -3,8 +3,8 @@ from collections import defaultdict
 from cPickle import dumps, loads
 from weakref import ref as weakref
 
-from pymq.const import DEFAULT
-from pymq.task import Queue, TaskSet, TaskSpace, TaskFailure, DeferredResult
+from worq.const import DEFAULT
+from worq.task import Queue, TaskSet, TaskSpace, TaskFailure, DeferredResult
 
 log = logging.getLogger(__name__)
 

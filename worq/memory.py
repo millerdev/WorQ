@@ -3,7 +3,7 @@
 MemoryResults is not suitable for long-running processes that use TaskSets.
 """
 import logging
-from pymq.core import AbstractMessageQueue, AbstractResultStore, DEFAULT
+from worq.core import AbstractMessageQueue, AbstractResultStore, DEFAULT
 from Queue import Queue, Empty
 from weakref import WeakValueDictionary, WeakKeyDictionary
 

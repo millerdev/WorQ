@@ -1,5 +1,5 @@
-from pymq import get_broker, queue, Task, TaskSet, TaskFailure, TaskSpace
-from pymq.tests.util import (assert_raises, eq_, eventually, thread_worker,
+from worq import get_broker, queue, Task, TaskSet, TaskFailure, TaskSpace
+from worq.tests.util import (assert_raises, eq_, eventually, thread_worker,
     with_urls)
 
 WAIT = 60 # default wait time (1 minute)

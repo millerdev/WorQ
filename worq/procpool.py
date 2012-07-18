@@ -1,6 +1,6 @@
 """Multi-process worker pool implementation
 
-Processes in the pymq.procpool stack:
+Processes in the worq.procpool stack:
     Producer - produces tasks to be executed
     Queue - message queue and results backend (redis)
     Broker - worker pool manager
@@ -18,8 +18,8 @@ from multiprocessing import Pipe, cpu_count, current_process
 from multiprocessing.process import AuthenticationString
 from multiprocessing.reduction import reduce_connection, rebuild_connection
 from cPickle import dump, load, HIGHEST_PROTOCOL, PicklingError
-from pymq import get_broker
-from pymq.core import DAY
+from worq import get_broker
+from worq.core import DAY
 from Queue import Empty, Queue as ThreadQueue
 from threading import Thread
 
@@ -269,7 +269,7 @@ def run_in_subprocess(_func, *args, **kw):
 
     :returns: A subprocess.Popen object.
     """
-    prog = 'from pymq.procpool import main; main()'
+    prog = 'from worq.procpool import main; main()'
     # close_fds=True prevents intermittent deadlock in Popen
     # See http://bugs.python.org/issue2320
     proc = subprocess.Popen([PYTHON_EXE, '-c', prog],

@@ -1,10 +1,9 @@
-# PyMQ implementation
 from __future__ import absolute_import
 from urlparse import urlparse
-from pymq.core import DEFAULT, Broker
-from pymq.task import Task, TaskSet, TaskFailure, TaskSpace
-from pymq.memory import MemoryQueue, MemoryResults
-from pymq.redis import RedisQueue, RedisResults
+from worq.core import DEFAULT, Broker
+from worq.task import Task, TaskSet, TaskFailure, TaskSpace
+from worq.memory import MemoryQueue, MemoryResults
+from worq.redis import RedisQueue, RedisResults
 
 BROKER_REGISTRY = {
     'memory': (MemoryQueue.factory, MemoryResults.factory),
@@ -36,7 +35,7 @@ def queue(url, queue=DEFAULT, target=''):
         named queue. Default value: 'default'.
     :param target: Task namespace (similar to a python module) or name
         (similar to a python function). Default to the root namespace ('').
-    :returns: An instance of pymq.task.Queue.
+    :returns: An instance of worq.task.Queue.
     """
     broker = get_broker(url)
     return broker.queue(queue, target)

@@ -3,14 +3,14 @@ from __future__ import absolute_import
 import logging
 import redis
 from urlparse import urlparse
-from pymq.core import AbstractMessageQueue, AbstractResultStore, DAY
+from worq.core import AbstractMessageQueue, AbstractResultStore, DAY
 
 log = logging.getLogger(__name__)
 
-QUEUE_PATTERN = 'pymq:queue:%s'
-RESULT_PATTERN = 'pymq:result:%s'
-STATUS_PATTERN = 'pymq:status:%s'
-TASKSET_PATTERN = 'pymq:taskset:%s'
+QUEUE_PATTERN = 'worq:queue:%s'
+RESULT_PATTERN = 'worq:result:%s'
+STATUS_PATTERN = 'worq:status:%s'
+TASKSET_PATTERN = 'worq:taskset:%s'
 
 
 class RedisBackendMixin(object):

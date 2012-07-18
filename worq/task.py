@@ -1,7 +1,7 @@
 import time
 from uuid import uuid4
 
-from pymq.const import DEFAULT
+from worq.const import DEFAULT
 
 
 class Queue(object):

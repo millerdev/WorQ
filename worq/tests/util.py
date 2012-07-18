@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from tempfile import mkdtemp
 from threading import Thread, Lock
 
-from pymq.core import _StopWorker
+from worq.core import _StopWorker
 
 log = logging.getLogger(__name__)
 

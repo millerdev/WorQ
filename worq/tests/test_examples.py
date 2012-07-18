@@ -1,4 +1,4 @@
-from pymq.tests.util import TEST_URLS
+from worq.tests.util import TEST_URLS
 
 def example(func):
     # test helper
