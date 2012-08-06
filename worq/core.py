@@ -26,7 +26,8 @@ from cPickle import dumps, loads
 from weakref import ref as weakref
 
 from worq.const import DEFAULT
-from worq.task import Queue, TaskSet, TaskSpace, TaskFailure, DeferredResult
+from worq.task import (Queue, TaskSet, TaskSpace, DeferredResult,
+    TaskStatus, TaskFailure)
 
 log = logging.getLogger(__name__)
 
@@ -102,7 +103,8 @@ class Broker(object):
             result = self.results.deferred_result(task_id)
             if result_status:
                 timeout = options.get('result_timeout', DAY)
-                self.results.set_status(task_id, dumps('enqueued'), timeout)
+                status = TaskStatus('enqueued')
+                self.results.set_result(task_id, dumps(status), timeout)
         else:
             result = None
         self.messages.enqueue_task(queue, message)
@@ -118,9 +120,11 @@ class Broker(object):
         timeout = options.get('result_timeout', DAY)
         result_status = options.get('result_status', False)
         if result_status:
-            self.results.set_status(task_id, dumps('processing'), timeout)
+            status = TaskStatus('processing')
+            self.results.set_result(task_id, dumps(status), timeout)
             def update_status(value):
-                self.results.set_status(task_id, dumps(value), timeout)
+                status = TaskStatus(value)
+                self.results.set_result(task_id, dumps(status), timeout)
             kw['update_status'] = update_status
         try:
             try:
@@ -249,16 +253,6 @@ class AbstractResultStore(object):
             raise KeyError(task_id)
         return loads(message)
 
-    def status(self, task_id):
-        """Pop and deserialize task status
-
-        :param task_id: Unique task identifier string.
-        :returns: Deserialized status object.
-        :raises: KeyError if there is no status or the status has already
-            been popped.
-        """
-        return loads(self.pop_status(task_id))
-
     def set_result(self, task_id, message, timeout):
         """Persist serialized result message.
 
@@ -276,25 +270,6 @@ class AbstractResultStore(object):
         :param timeout: Length of time to wait for the result. Wait indefinitely
             if None. Return immediately if timeout is zero (0).
         :returns: The result message; None if not found.
-        """
-        raise NotImplementedError('abstract method')
-
-    def set_status(self, task_id, message, timeout):
-        """Persist serialized task status
-
-        :param task_id: Unique task identifier string.
-        :param message: (string) Serialized status object.
-        :param timeout: Number of seconds to persist the status before
-            discarding it.
-        """
-        raise NotImplementedError('abstract method')
-
-    def pop_status(self, task_id):
-        """Pop serialized task status
-
-        :param task_id: Unique task identifier string.
-        :returns: (string) Serialized status object.
-        :raises: KeyError if there is no status for the given task id.
         """
         raise NotImplementedError('abstract method')
 

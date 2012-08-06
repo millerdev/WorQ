@@ -103,20 +103,6 @@ class RedisResults(RedisBackendMixin, AbstractResultStore):
         result = self.redis.blpop([key], timeout=timeout)
         return result if result is None else result[1]
 
-    def set_status(self, task_id, message, timeout):
-        key = STATUS_PATTERN % task_id
-        self.redis.setex(key, timeout, message)
-
-    def pop_status(self, task_id):
-        key = STATUS_PATTERN % task_id
-        pipe = self.redis.pipeline()
-        pipe.get(key)
-        pipe.delete(key)
-        value = pipe.execute()[0]
-        if value is None:
-            raise KeyError(task_id)
-        return value
-
     def update(self, taskset_id, num_tasks, message, timeout):
         key = TASKSET_PATTERN % taskset_id
         num = self.redis.rpush(key, message)

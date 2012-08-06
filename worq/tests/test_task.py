@@ -51,3 +51,23 @@ def test_TaskSet_on_error_FAIL(url):
         with assert_raises(TaskFailure,
                 'func [default:%s] subtask(s) failed' % res.id):
             res.value
+
+@with_urls
+def test_DeferredResult_wait_with_status_update(url):
+
+    def func(arg, update_status=None):
+        update_status('running')
+        return arg
+
+    broker = get_broker(url)
+    broker.expose(func)
+    with thread_worker(broker):
+
+        # -- task-invoking code, usually another process --
+        q = queue(url)
+
+        task = Task(q.func, result_status=True, result_timeout=WAIT)
+        res = task(1)
+        res.wait(timeout=WAIT)
+
+        eq_(res.value, 1)

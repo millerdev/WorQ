@@ -23,11 +23,15 @@ SOFTWARE.
 -------------------------------------------------------------------------------
 
 TODO
-- Fix TODO items in procpool
+- Fix TODO items in worq.pool.process
 - Include task name in repr of DeferredResult
-- Pass TaskStatus objects through result queue (avoid extra status key)
+
 - Improve task serialization for fast option and task_id access (avoid unpickle of parameters, etc.)
 - Come up with a name for the worker pool coordinator process.
+- Call taskset with no args uses identity task that simply returns it's first arg
+- DeferredResult.wait should continue waiting if its value is a DeferredResult
+    - DeferredResult should be picklable
+- ?Add dependent task to a DeferredResult (value of deferred is passed to dependent)
 - Reload worker pool config on HUP
 - Task monitoring (must be optional)
     - update result heartbeat periodically
@@ -36,7 +40,9 @@ TODO
     - result is created in redis on enqueue task
     - task/result has a state machine: pending, in process, completed, lost...
     - running task can update its status on its (in process) result object
+- Skip tests if queue backend is not running
 
+x Pass TaskStatus objects through result queue (avoid extra status key)
 x MIT license
 x Move worq.procpool to worq.pool.process
 x new name for project: WorQ

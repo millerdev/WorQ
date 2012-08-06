@@ -120,38 +120,6 @@ class Task(object):
         return '<Task %s [%s]>' % (self.name, self.queue._Queue__queue)
 
 
-class TaskFailure(Exception):
-    """Task failure exception class"""
-
-    @property
-    def task_name(self):
-        return self.args[0]
-
-    @property
-    def queue(self):
-        return self.args[1]
-
-    @property
-    def task_id(self):
-        return self.args[2]
-
-    @property
-    def error(self):
-        return self.args[3]
-
-    def __str__(self):
-        return '%s [%s:%s] %s' % self.args
-
-    def __repr__(self):
-        return '<TaskFailure %s>' % self
-
-    def __eq__(self, other):
-        return isinstance(other, TaskFailure) and repr(self) == repr(other)
-
-    def __ne__(self, other):
-        return not self.__eq__(other)
-
-
 class DeferredResult(object):
     """Deferred result object
 
@@ -161,6 +129,17 @@ class DeferredResult(object):
     def __init__(self, store, task_id):
         self.store = store
         self.id = task_id
+        self._status = None
+
+    def _fetch(self, timeout=0):
+        try:
+            value = self.store.pop(self.id, timeout=timeout)
+        except KeyError:
+            return
+        if isinstance(value, TaskStatus):
+            self._status = value.value
+        else:
+            self._value = value
 
     @property
     def value(self):
@@ -168,7 +147,7 @@ class DeferredResult(object):
 
         :returns: The value returned by the task if it completed successfully.
         :raises: AttributeError if the task has not yet completed. TaskFailure
-            if the task could not be invoked or raised an error.
+            if the task failed for any reason.
         """
         if isinstance(self._value, TaskFailure):
             raise self._value
@@ -177,10 +156,7 @@ class DeferredResult(object):
     @property
     def status(self):
         """Get task status"""
-        try:
-            self._status = self.store.status(self.id)
-        except KeyError:
-            pass
+        self._fetch()
         return self._status
 
     def wait(self, timeout):
@@ -196,20 +172,23 @@ class DeferredResult(object):
             to deadlock.
         :returns: True if the result is available, otherwise False.
         """
-        if not hasattr(self, '_value'):
-            try:
-                self._value = self.store.pop(self.id, timeout)
-            except KeyError:
-                pass
+        if timeout is None:
+            end = None
+        else:
+            end = time.time() + timeout
+        while not hasattr(self, '_value'):
+            self._fetch(timeout)
+            if timeout == 0:
+                break
+            if timeout is not None:
+                timeout = max(0, int(end - time.time()))
         return hasattr(self, '_value')
 
     def __nonzero__(self):
         """Return True if the result has arrived, otherwise False."""
         if not hasattr(self, '_value'):
-            try:
-                self._value = self.store.pop(self.id)
-            except KeyError:
-                return False
+            self._fetch()
+            return hasattr(self, '_value')
         return True
 
     def __repr__(self):
@@ -218,8 +197,10 @@ class DeferredResult(object):
                 status = 'failed'
             else:
                 status = 'success'
+        elif self._status is not None:
+            status = self._status
         else:
-            status = getattr(self, 'status', 'incomplete')
+            status = 'incomplete'
         return '<DeferredResult %s %s>' % (self.id, status)
 
 
@@ -346,3 +327,42 @@ class TaskSpace(object):
             raise ValueError('task %r conflicts with existing task' % name)
         self.tasks[name] = callable
         return callable
+
+
+class TaskFailure(Exception):
+    """Task failure exception class"""
+
+    @property
+    def task_name(self):
+        return self.args[0]
+
+    @property
+    def queue(self):
+        return self.args[1]
+
+    @property
+    def task_id(self):
+        return self.args[2]
+
+    @property
+    def error(self):
+        return self.args[3]
+
+    def __str__(self):
+        return '%s [%s:%s] %s' % self.args
+
+    def __repr__(self):
+        return '<TaskFailure %s>' % self
+
+    def __eq__(self, other):
+        return isinstance(other, TaskFailure) and repr(self) == repr(other)
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
+
+
+class TaskStatus(object):
+    """Task status value container/marker"""
+
+    def __init__(self, value):
+        self.value = value

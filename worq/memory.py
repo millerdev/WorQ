@@ -110,15 +110,6 @@ class MemoryResults(AbstractResultStore):
             result = None
         return result
 
-    def set_status(self, task_id, message, timeout):
-        result_obj = self.results_by_task.get(task_id)
-        if result_obj is not None:
-            result_obj.__status = message
-
-    def pop_status(self, task_id):
-        result_obj = self.results_by_task[task_id]
-        return result_obj.__status
-
     def update(self, taskset_id, num, message, timeout):
         """not thread-safe and leaks memory if a taskset is not completed"""
         value = self.tasksets.setdefault(taskset_id, [])
