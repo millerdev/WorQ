@@ -49,18 +49,14 @@ class RedisQueue(AbstractMessageQueue):
         self.redis = redis_factory(host, int(port), db=db)
         self.queue_key = QUEUE_PATTERN % self.name
 
+    def enqueue_task(self, message):
+        self.redis.rpush(self.queue_key, message)
+
     def get(self, timeout=0):
         item = self.redis.blpop(self.queue_key, timeout=timeout)
         if item is None:
             return item
         return item[1]
-
-    def __iter__(self):
-        while True:
-            yield self.get()
-
-    def enqueue_task(self, message):
-        self.redis.rpush(self.queue_key, message)
 
     def discard_pending(self):
         self.redis.delete(self.queue_key)

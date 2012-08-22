@@ -194,12 +194,11 @@ class AbstractMessageQueue(object):
         self.url = url
         self.name = name
 
-    def __iter__(self):
-        """Return an iterator that yields task messages.
+    def enqueue_task(self, message):
+        """Enqueue a task message onto a named task queue.
 
-        Task iteration normally blocks when there are no pending tasks to
-        execute. Each yielded item must be a two-tuple consisting of
-        (<queue name>, <task message>).
+        :param queue: Queue name.
+        :param message: Serialized task message.
         """
         raise NotImplementedError('abstract method')
 
@@ -214,13 +213,13 @@ class AbstractMessageQueue(object):
         """
         raise NotImplementedError('abstract method')
 
-    def enqueue_task(self, message):
-        """Enqueue a task message onto a named task queue.
+    def __iter__(self):
+        """Return an iterator that yields task messages.
 
-        :param queue: Queue name.
-        :param message: Serialized task message.
+        Task iteration blocks when there are no pending tasks to execute.
         """
-        raise NotImplementedError('abstract method')
+        while True:
+            yield self.get()
 
     def discard_pending(self):
         """Discard pending tasks from queue"""

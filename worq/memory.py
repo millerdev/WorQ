@@ -52,16 +52,12 @@ class MemoryQueue(AbstractMessageQueue):
         self.results_by_task = WeakValueDictionary()
         self.tasksets = {}
 
+    def enqueue_task(self, message):
+        self.queue.put(message)
+
     def get(self, timeout=None):
         # TODO handle Empty, return None
         return self.queue.get(timeout=timeout)
-
-    def __iter__(self):
-        while True:
-            yield self.get()
-
-    def enqueue_task(self, message):
-        self.queue.put(message)
 
     def discard_pending(self):
         while True:
