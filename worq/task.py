@@ -49,18 +49,17 @@ class Queue(object):
     of defining functions in modules and packages.
 
     NOTE two queue objects are considered equal if they refer to the same
-    queue on the same broker (their targets may be different).
+    broker (their targets may be different).
     """
 
-    def __init__(self, broker, queue=DEFAULT, target=''):
+    def __init__(self, broker, target=''):
         self.__broker = broker
-        self.__queue = queue
         self.__target = target
 
     def __getattr__(self, target):
         if self.__target:
             target = '%s.%s' % (self.__target, target)
-        return Queue(self.__broker, self.__queue, target)
+        return Queue(self.__broker, target)
 
     def __call__(self, *args, **kw):
         """Invoke the task identified by this Queue"""
@@ -69,13 +68,13 @@ class Queue(object):
     def __eq__(self, other):
         if not isinstance(other, type(self)):
             return False
-        return (self.__broker, self.__queue) == (other.__broker, other.__queue)
+        return self.__broker == other.__broker
 
     def __ne__(self, other):
         return not self.__eq__(other)
 
     def __repr__(self):
-        return '<Queue %s [%s]>' % (self.__target, self.__queue)
+        return '<Queue %s [%s]>' % (self.__target, self.__broker.name)
 
     def __str__(self):
         return self.__target
@@ -110,7 +109,7 @@ class Task(object):
     def __call__(self, *args, **kw):
         id = uuid4().hex
         return self.queue._Queue__broker.enqueue(
-            self.queue._Queue__queue, id, self.name, args, kw, self.options)
+            id, self.name, args, kw, self.options)
 
     def with_options(self, options):
         """Clone this task with a new set of options"""

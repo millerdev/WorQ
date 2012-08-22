@@ -273,7 +273,7 @@ def worker_process(parent_pid, reduced_cn, url,
         if task == STOP:
             break
 
-        broker.invoke(*task)
+        broker.invoke(task)
 
         if max_worker_tasks is None:
             parent.send(None) # signal task completion

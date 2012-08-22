@@ -51,8 +51,6 @@ class MemoryQueue(AbstractMessageQueue):
 
     def __init__(self, *args, **kw):
         super(MemoryQueue, self).__init__(*args, **kw)
-        if self.queues != [DEFAULT]:
-            log.warn('MemoryQueue does not support named queues')
         self.queue = Queue()
 
     def get(self, timeout=None):
@@ -63,8 +61,8 @@ class MemoryQueue(AbstractMessageQueue):
         while True:
             yield self.get()
 
-    def enqueue_task(self, queue, message):
-        self.queue.put((queue, message))
+    def enqueue_task(self, message):
+        self.queue.put(message)
 
     def discard_pending(self):
         while True:

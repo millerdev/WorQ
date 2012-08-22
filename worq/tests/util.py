@@ -64,9 +64,9 @@ def thread_worker(broker, lock=None):
         # acquire lock prior to invoking each task
         def run():
             try:
-                for queue, message in broker.messages:
+                for message in broker.messages:
                     lock.acquire()
-                    broker.invoke(queue, message)
+                    broker.invoke(message)
             except _StopWorker:
                 log.info('worker stopped')
             except:

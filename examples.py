@@ -75,27 +75,22 @@ def expose_method(url):
 
 
 @example
-def named_queues(url):
+def named_queue(url):
+    # named queues facilitate multiple queues on a single backend
     state = []
 
     def func(arg):
         state.append(arg)
 
-    # Tasks will be prioritized according the order in which queue names are
-    # passed to the broker. In this case 'high' tasks will be prioritized
-    # above 'low'.
-    broker = get_broker(url, 'high', 'low')
+    broker = get_broker(url, 'name')
     broker.expose(func)
     with thread_worker(broker):
 
         # -- task-invoking code, usually another process --
-        high = queue(url, 'high')
-        low = queue(url, 'low')
+        q = queue(url, 'name')
+        q.func(1)
 
-        high.func(1)
-        low.func(2)
-
-        eventually((lambda:state), [1, 2])
+        eventually((lambda:state), [1])
 
 
 @example

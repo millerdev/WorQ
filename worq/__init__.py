@@ -32,32 +32,32 @@ BROKER_REGISTRY = {
     'redis': (RedisQueue, RedisResults),
 }
 
-def get_broker(url, *queues):
+def get_broker(url, name=DEFAULT):
     """Create a new broker
 
     :param url: Message queue and result store URL (this convenience function
         uses the same URL to construct both).
-    :param *queues: One or more queue names on which to expose or invoke tasks.
+    :param name: The name of the queue on which to expose or invoke tasks.
+        Default value: 'default'.
     """
     url_scheme = urlparse(url).scheme
     try:
         make_queue, make_results = BROKER_REGISTRY[url_scheme]
     except KeyError:
         raise ValueError('invalid broker URL: %s' % url)
-    message_queue = make_queue(url, queues)
+    message_queue = make_queue(url, name)
     result_store = make_results(url)
     return Broker(message_queue, result_store)
 
-def queue(url, queue=DEFAULT, target=''):
+def queue(url, name=DEFAULT, target=''):
     """Get a queue object for invoking remote tasks
 
     :param url: URL of the task queue.
-    :param queue: The name of the queue on which tasks should be invoked.
+    :param queue_name: The name of the queue on which tasks should be invoked.
         Queued tasks will be invoked iff there is a worker listening on the
         named queue. Default value: 'default'.
     :param target: Task namespace (similar to a python module) or name
         (similar to a python function). Default to the root namespace ('').
     :returns: An instance of worq.task.Queue.
     """
-    broker = get_broker(url)
-    return broker.queue(queue, target)
+    return get_broker(url, name).queue(target)

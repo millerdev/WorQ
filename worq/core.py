@@ -48,9 +48,10 @@ class Broker(object):
         self.messages = message_queue
         self.results = result_store
         self.tasks = {_stop_task.name: _stop_task}
+        self.name = message_queue.name
 
     def expose(self, obj):
-        """Expose a TaskSpace or task callable to all queues.
+        """Expose a TaskSpace or task callable.
 
         :param obj: A TaskSpace or task callable.
         """
@@ -70,8 +71,8 @@ class Broker(object):
         This is normally a blocking call.
         """
         try:
-            for queue, message in self.messages:
-                self.invoke(queue, message)
+            for message in self.messages:
+                self.invoke(message)
         except _StopWorker:
             log.info('worker stopped')
 
@@ -81,17 +82,17 @@ class Broker(object):
         WARNING this is only meant for testing purposes. It will likely not do
         what you expect in an environment with more than one worker.
         """
-        queue = self.messages.stop_queue
-        self.enqueue(queue, 'stop', _stop_task.name, (), {}, {})
+        self.enqueue('stop', _stop_task.name, (), {}, {})
 
     def discard_pending_tasks(self):
-        """Discard pending tasks from all queues"""
+        """Discard pending tasks from queue"""
         self.messages.discard_pending()
 
-    def queue(self, queue=DEFAULT, target=''):
-        return Queue(self, queue, target)
+    def queue(self, target=''):
+        return Queue(self, target)
 
-    def enqueue(self, queue, task_id, task_name, args, kw, options):
+    def enqueue(self, task_id, task_name, args, kw, options):
+        queue = self.name # TODO remove this
         unknown_options = set(options) - self.task_options
         if unknown_options:
             raise ValueError('unrecognized task options: %s'
@@ -107,15 +108,16 @@ class Broker(object):
                 self.results.set_result(task_id, dumps(status), timeout)
         else:
             result = None
-        self.messages.enqueue_task(queue, message)
+        self.messages.enqueue_task(message)
         return result
 
-    def invoke(self, queue, message):
+    def invoke(self, message):
         try:
             task_id, task_name, args, kw, options = loads(message)
         except Exception:
             log.error('cannot load task message: %s', message, exc_info=True)
             return
+        queue = self.name
         log.debug('invoke %s [%s:%s]', task_name, queue, task_id)
         timeout = options.get('result_timeout', DAY)
         result_status = options.get('result_status', False)
@@ -170,7 +172,7 @@ class Broker(object):
                 taskset_id, num, dumps(result), timeout)
             if results is not None:
                 args = ([loads(r) for r in results],) + args
-                self.enqueue(queue, taskset_id, task_name, args, kw, options)
+                self.enqueue(taskset_id, task_name, args, kw, options)
 
     def deferred_result(self, task_id):
         return self.results.deferred_result(task_id)
@@ -180,17 +182,12 @@ class AbstractMessageQueue(object):
     """Message queue abstract base class
 
     :param url: URL used to identify the queue.
-    :param *queues: One or more strings representing the names of queues to
-        listen for during message iteration.
+    :param name: Queue name.
     """
 
-    def __init__(self, url, queues):
+    def __init__(self, url, name=DEFAULT):
         self.url = url
-        self.queues = list(queues) if queues else [DEFAULT]
-
-    @property
-    def stop_queue(self):
-        return self.queues[0]
+        self.name = name
 
     def __iter__(self):
         """Return an iterator that yields task messages.
@@ -212,7 +209,7 @@ class AbstractMessageQueue(object):
         """
         raise NotImplementedError('abstract method')
 
-    def enqueue_task(self, queue, message):
+    def enqueue_task(self, message):
         """Enqueue a task message onto a named task queue.
 
         :param queue: Queue name.
@@ -221,7 +218,7 @@ class AbstractMessageQueue(object):
         raise NotImplementedError('abstract method')
 
     def discard_pending(self):
-        """Discard pending tasks from all queues"""
+        """Discard pending tasks from queue"""
         raise NotImplementedError('abstract method')
 
 

@@ -62,26 +62,23 @@ class RedisQueue(RedisBackendMixin, AbstractMessageQueue):
 
     def __init__(self, *args, **kw):
         super(RedisQueue, self).__init__(*args, **kw)
-        self.queue_keys = [QUEUE_PATTERN % q for q in self.queues]
-        self.queue_trim = len(QUEUE_PATTERN % '')
+        self.queue_key = QUEUE_PATTERN % self.name
 
     def get(self, timeout=0):
-        item = self.redis.blpop(self.queue_keys, timeout=timeout)
+        item = self.redis.blpop(self.queue_key, timeout=timeout)
         if item is None:
             return item
-        queue, message = item
-        return (queue[self.queue_trim:], message)
+        return item[1]
 
     def __iter__(self):
         while True:
             yield self.get()
 
-    def enqueue_task(self, queue, message):
-        key = QUEUE_PATTERN % queue
-        self.redis.rpush(key, message)
+    def enqueue_task(self, message):
+        self.redis.rpush(self.queue_key, message)
 
     def discard_pending(self):
-        self.redis.delete(*[QUEUE_PATTERN % q for q in self.queues])
+        self.redis.delete(self.queue_key)
 
 
 class RedisResults(RedisBackendMixin, AbstractResultStore):

@@ -26,7 +26,7 @@ TODO
 - Fix TODO items in worq.pool.process
     - Add support for heartbeat/keepalive
       Atomically set result timeout when task processing begins
-        - Refactor/simplify broker to manage a single queue (for BRPOPLPUSH)
+x       - Refactor/simplify broker to manage a single queue (for BRPOPLPUSH)
         - Combine queue and result store (they need to interact)
             can always make a hybrid (ex: Redis/Postgres) backend if needed
 
