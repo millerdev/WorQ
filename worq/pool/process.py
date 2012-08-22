@@ -131,16 +131,24 @@ class WorkerPool(object):
         get_task = broker.messages.get
         get_worker = self._worker_queue.get
         put_worker = self._worker_queue.put
-        while True:
-            worker = get_worker()
-            if worker == STOP:
-                break
-            # TODO handle error (e.g., queue went away)
-            task = get_task(timeout)
-            if task is None:
-                put_worker(worker)
-                continue
-            worker.execute(task, put_worker)
+        try:
+            while True:
+                worker = get_worker()
+                if worker == STOP:
+                    break
+                # TODO prevent job loss on unexpected shutdown (use ACK?).
+                # To be resilient to job loss, do not care about the loss.
+                # Instead, the result (if it is being monitored) must tell
+                # its owner that the job was lost. If no result is being
+                # monitored then the owner must have some other way to
+                # determine if the job failed.
+                task = get_task(timeout)
+                if task is None:
+                    put_worker(worker)
+                    continue
+                worker.execute(task, put_worker)
+        except Exception:
+            log.error('task consumer crashed', exc_info=True)
         log.debug('consumer stopped')
 
     def stop(self):
@@ -226,7 +234,7 @@ class WorkerProxy(object):
                     # TODO update result heartbeat
                 status = child.recv()
             except Exception:
-                log.error('%s died unexpectedly', self, exc_info=True)
+                log.error('%s died unexpectedly', str(self), exc_info=True)
                 child.close()
                 proc.stdin.close()
                 proc = None

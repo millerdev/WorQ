@@ -24,10 +24,25 @@ SOFTWARE.
 
 TODO
 - Fix TODO items in worq.pool.process
+    - Add support for heartbeat/keepalive
+      Atomically set result timeout when task processing begins
+        - Refactor/simplify broker to manage a single queue (for BRPOPLPUSH)
+        - Combine queue and result store (they need to interact)
+            can always make a hybrid (ex: Redis/Postgres) backend if needed
+
+        BRPOPLPUSH next task id
+        atomically:
+            EXPIRE result
+            GET task details
+            LREM task id from queue (process task if successful)
+
+    - Improve status/heartbeat handling to not process old status values.
+
 - Include task name in repr of DeferredResult
 
 - Improve task serialization for fast option and task_id access (avoid unpickle of parameters, etc.)
 - Come up with a name for the worker pool coordinator process.
+- TaskSet should store final task with its results
 - Call taskset with no args uses identity task that simply returns it's first arg
 - DeferredResult.wait should continue waiting if its value is a DeferredResult
     - DeferredResult should be picklable

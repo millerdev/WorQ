@@ -162,9 +162,8 @@ class DeferredResult(object):
     def wait(self, timeout):
         """Wait for the task result.
 
-        Use this method wisely. A task calling this method, waiting on the
-        result of another task being executed by the same group of workers
-        as the waiting task, may result in dead lock of the entire system.
+        Use this method wisely. In general a task should never wait on the
+        result of another task because it may cause deadlock.
 
         :param timeout: Number of seconds to wait. A value of None will wait
             indefinitely, but this is dangerous since the worker may go away

@@ -228,6 +228,16 @@ class AbstractMessageQueue(object):
 class AbstractResultStore(object):
     """Result store abstract base class
 
+    Result lifecycle
+    1. Store result placeholder with value of 'pending' and no timeout.
+        Enqueue task. This group of operations is done atomically.
+    2. Pop task from queue and set timeout on result placeholder. These
+       operations must be performed atomically so that the task is not lost if
+       the result timeout is not set; someone waiting on the task must not
+       wait forever.
+    3. heart beats (extend result expiration, error if heart stops beating)
+    4. task finishes (return result value)
+
     :param url: URL used to identify the queue.
     """
 
