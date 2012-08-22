@@ -22,22 +22,16 @@
 
 """In-memory message queue and result store.
 
-MemoryResults is not suitable for long-running processes that use TaskSets.
+MemoryQueue is not suitable for long-running processes that use TaskSets.
 """
 import logging
-from worq.core import AbstractMessageQueue, AbstractResultStore, DEFAULT
+from worq.core import AbstractMessageQueue, DEFAULT
 from Queue import Queue, Empty
 from weakref import WeakValueDictionary, WeakKeyDictionary
 
 log = logging.getLogger(__name__)
 
 _REFS = WeakValueDictionary()
-
-def _get_ref(key, cls, url, *args, **kw):
-    obj = _REFS.get((url, key))
-    if obj is None:
-        obj = _REFS[(url, key)] = cls(url, *args, **kw)
-    return obj
 
 class MemoryQueue(AbstractMessageQueue):
     """Simple in-memory message queue implementation
@@ -46,12 +40,17 @@ class MemoryQueue(AbstractMessageQueue):
     """
 
     @classmethod
-    def factory(*args, **kw):
-        return _get_ref('queue', *args, **kw)
+    def factory(cls, url, name=DEFAULT, *args, **kw):
+        obj = _REFS.get((url, name))
+        if obj is None:
+            obj = _REFS[(url, name)] = cls(url, name, *args, **kw)
+        return obj
 
     def __init__(self, *args, **kw):
         super(MemoryQueue, self).__init__(*args, **kw)
         self.queue = Queue()
+        self.results_by_task = WeakValueDictionary()
+        self.tasksets = {}
 
     def get(self, timeout=None):
         # TODO handle Empty, return None
@@ -71,23 +70,10 @@ class MemoryQueue(AbstractMessageQueue):
             except Empty:
                 break
 
-
-class MemoryResults(AbstractResultStore):
-    # this result store is not thread-safe
-
-    @classmethod
-    def factory(*args, **kw):
-        return _get_ref('results', *args, **kw)
-
-    def __init__(self, *args, **kw):
-        super(MemoryResults, self).__init__(*args, **kw)
-        self.results_by_task = WeakValueDictionary()
-        self.tasksets = {}
-
     def deferred_result(self, task_id):
         result = self.results_by_task.get(task_id)
         if result is None:
-            result = super(MemoryResults, self).deferred_result(task_id)
+            result = super(MemoryQueue, self).deferred_result(task_id)
             self.results_by_task[task_id] = result
             result.__status = None
             result.__result = Queue()

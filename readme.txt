@@ -27,8 +27,8 @@ TODO
     - Add support for heartbeat/keepalive
       Atomically set result timeout when task processing begins
 x       - Refactor/simplify broker to manage a single queue (for BRPOPLPUSH)
-        - Combine queue and result store (they need to interact)
-            can always make a hybrid (ex: Redis/Postgres) backend if needed
+x       - Combine queue and result store (they need to interact)
+x           can always make a hybrid (ex: Redis/Postgres) backend if needed
 
         BRPOPLPUSH next task id
         atomically:

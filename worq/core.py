@@ -44,9 +44,8 @@ class Broker(object):
         'on_error',
     ])
 
-    def __init__(self, message_queue, result_store):
+    def __init__(self, message_queue):
         self.messages = message_queue
-        self.results = result_store
         self.tasks = {_stop_task.name: _stop_task}
         self.name = message_queue.name
 
@@ -101,11 +100,11 @@ class Broker(object):
         message = dumps((task_id, task_name, args, kw, options))
         result_status = options.get('result_status', False)
         if result_status or 'result_timeout' in options:
-            result = self.results.deferred_result(task_id)
+            result = self.messages.deferred_result(task_id)
             if result_status:
                 timeout = options.get('result_timeout', DAY)
                 status = TaskStatus('enqueued')
-                self.results.set_result(task_id, dumps(status), timeout)
+                self.messages.set_result(task_id, dumps(status), timeout)
         else:
             result = None
         self.messages.enqueue_task(message)
@@ -123,10 +122,10 @@ class Broker(object):
         result_status = options.get('result_status', False)
         if result_status:
             status = TaskStatus('processing')
-            self.results.set_result(task_id, dumps(status), timeout)
+            self.messages.set_result(task_id, dumps(status), timeout)
             def update_status(value):
                 status = TaskStatus(value)
-                self.results.set_result(task_id, dumps(status), timeout)
+                self.messages.set_result(task_id, dumps(status), timeout)
             kw['update_status'] = update_status
         try:
             try:
@@ -155,7 +154,7 @@ class Broker(object):
                 self.process_taskset(queue, options['taskset'], result)
             elif result_status or 'result_timeout' in options:
                 message = dumps(result)
-                self.results.set_result(task_id, message, timeout)
+                self.messages.set_result(task_id, message, timeout)
 
     def process_taskset(self, queue, taskset, result):
         taskset_id, task_name, args, kw, options, num = taskset
@@ -166,20 +165,26 @@ class Broker(object):
             # and their results will be persisted if they succeed.
             message = dumps(TaskFailure(
                 task_name, queue, taskset_id, 'subtask(s) failed'))
-            self.results.set_result(taskset_id, message, timeout)
+            self.messages.set_result(taskset_id, message, timeout)
         else:
-            results = self.results.update(
+            results = self.messages.update(
                 taskset_id, num, dumps(result), timeout)
             if results is not None:
                 args = ([loads(r) for r in results],) + args
                 self.enqueue(taskset_id, task_name, args, kw, options)
 
     def deferred_result(self, task_id):
-        return self.results.deferred_result(task_id)
+        return self.messages.deferred_result(task_id)
 
 
 class AbstractMessageQueue(object):
     """Message queue abstract base class
+
+    Task/result lifecycle
+    1. Atomically store non-expiring result placeholder and enqueue task.
+    2. Atomically pop task from queue and set timeout on result placeholder.
+    3. Task heartbeats extend result expiration as needed.
+    4. Task finishes and result value is saved.
 
     :param url: URL used to identify the queue.
     :param name: Queue name.
@@ -220,26 +225,6 @@ class AbstractMessageQueue(object):
     def discard_pending(self):
         """Discard pending tasks from queue"""
         raise NotImplementedError('abstract method')
-
-
-class AbstractResultStore(object):
-    """Result store abstract base class
-
-    Result lifecycle
-    1. Store result placeholder with value of 'pending' and no timeout.
-        Enqueue task. This group of operations is done atomically.
-    2. Pop task from queue and set timeout on result placeholder. These
-       operations must be performed atomically so that the task is not lost if
-       the result timeout is not set; someone waiting on the task must not
-       wait forever.
-    3. heart beats (extend result expiration, error if heart stops beating)
-    4. task finishes (return result value)
-
-    :param url: URL used to identify the queue.
-    """
-
-    def __init__(self, url):
-        self.url = url
 
     def deferred_result(self, task_id):
         """Return a DeferredResult object for the given task id"""

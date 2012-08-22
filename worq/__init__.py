@@ -24,15 +24,15 @@ from __future__ import absolute_import
 from urlparse import urlparse
 from worq.core import DEFAULT, Broker
 from worq.task import Task, TaskSet, TaskFailure, TaskSpace
-from worq.memory import MemoryQueue, MemoryResults
-from worq.redis import RedisQueue, RedisResults
+from worq.memory import MemoryQueue
+from worq.redis import RedisQueue
 
 BROKER_REGISTRY = {
-    'memory': (MemoryQueue.factory, MemoryResults.factory),
-    'redis': (RedisQueue, RedisResults),
+    'memory': MemoryQueue.factory,
+    'redis': RedisQueue,
 }
 
-def get_broker(url, name=DEFAULT):
+def get_broker(url, name=DEFAULT, *args, **kw):
     """Create a new broker
 
     :param url: Message queue and result store URL (this convenience function
@@ -40,14 +40,12 @@ def get_broker(url, name=DEFAULT):
     :param name: The name of the queue on which to expose or invoke tasks.
         Default value: 'default'.
     """
-    url_scheme = urlparse(url).scheme
+    scheme = urlparse(url).scheme
     try:
-        make_queue, make_results = BROKER_REGISTRY[url_scheme]
+        factory = BROKER_REGISTRY[scheme]
     except KeyError:
         raise ValueError('invalid broker URL: %s' % url)
-    message_queue = make_queue(url, name)
-    result_store = make_results(url)
-    return Broker(message_queue, result_store)
+    return Broker(factory(url, name, *args, **kw))
 
 def queue(url, name=DEFAULT, target=''):
     """Get a queue object for invoking remote tasks

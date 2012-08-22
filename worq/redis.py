@@ -25,29 +25,21 @@ from __future__ import absolute_import
 import logging
 import redis
 from urlparse import urlparse
-from worq.core import AbstractMessageQueue, AbstractResultStore, DAY
+from worq.core import AbstractMessageQueue, DAY
 
 log = logging.getLogger(__name__)
 
 QUEUE_PATTERN = 'worq:queue:%s'
-RESULT_PATTERN = 'worq:result:%s'
-STATUS_PATTERN = 'worq:status:%s'
-TASKSET_PATTERN = 'worq:taskset:%s'
+RESULT_PATTERN = 'worq:result:%s:%s'
+TASKSET_PATTERN = 'worq:taskset:%s:%s'
 
 
-class RedisBackendMixin(object):
-    """Connect to redis on __init__
-
-    In addition to the normal arguments accepted by `AbstractMessageQueue`,
-    `__init__` accepts a `redis_factory` argument, which can be used to
-    customize redis connection instantiation.
-
-    NOTE this mixin depends on Python's new-style-class method resolution order.
-    """
+class RedisQueue(AbstractMessageQueue):
+    """Redis message queue"""
 
     def __init__(self, url, *args, **kw):
         redis_factory = kw.pop('redis_factory', redis.StrictRedis)
-        super(RedisBackendMixin, self).__init__(url, *args, **kw)
+        super(RedisQueue, self).__init__(url, *args, **kw)
         urlobj = urlparse(url)
         if ':' in urlobj.netloc:
             host, port = urlobj.netloc.rsplit(':', 1)
@@ -55,13 +47,6 @@ class RedisBackendMixin(object):
             host, port = urlobj.netloc, 6379
         db = int(urlobj.path.lstrip('/'))
         self.redis = redis_factory(host, int(port), db=db)
-
-
-class RedisQueue(RedisBackendMixin, AbstractMessageQueue):
-    """Redis message queue"""
-
-    def __init__(self, *args, **kw):
-        super(RedisQueue, self).__init__(*args, **kw)
         self.queue_key = QUEUE_PATTERN % self.name
 
     def get(self, timeout=0):
@@ -80,19 +65,15 @@ class RedisQueue(RedisBackendMixin, AbstractMessageQueue):
     def discard_pending(self):
         self.redis.delete(self.queue_key)
 
-
-class RedisResults(RedisBackendMixin, AbstractResultStore):
-    """Redis result store"""
-
     def set_result(self, task_id, message, timeout):
-        key = RESULT_PATTERN % task_id
+        key = RESULT_PATTERN % (self.name, task_id)
         pipe = self.redis.pipeline()
         pipe.rpush(key, message)
         pipe.expire(key, timeout)
         pipe.execute()
 
     def pop_result(self, task_id, timeout):
-        key = RESULT_PATTERN % task_id
+        key = RESULT_PATTERN % (self.name, task_id)
         if timeout == 0:
             return self.redis.lpop(key)
         if timeout is None:
@@ -101,7 +82,7 @@ class RedisResults(RedisBackendMixin, AbstractResultStore):
         return result if result is None else result[1]
 
     def update(self, taskset_id, num_tasks, message, timeout):
-        key = TASKSET_PATTERN % taskset_id
+        key = TASKSET_PATTERN % (self.name, taskset_id)
         num = self.redis.rpush(key, message)
         if num == num_tasks:
             pipe = self.redis.pipeline()
