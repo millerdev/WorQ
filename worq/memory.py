@@ -52,7 +52,7 @@ class MemoryQueue(AbstractMessageQueue):
         self.results_by_task = WeakValueDictionary()
         self.tasksets = {}
 
-    def enqueue_task(self, message):
+    def enqueue_task(self, task_id, message):
         self.queue.put(message)
 
     def get(self, timeout=None):

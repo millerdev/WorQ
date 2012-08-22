@@ -107,7 +107,7 @@ class Broker(object):
                 self.messages.set_result(task_id, dumps(status), timeout)
         else:
             result = None
-        self.messages.enqueue_task(message)
+        self.messages.enqueue_task(task_id, message)
         return result
 
     def invoke(self, message):
@@ -194,22 +194,26 @@ class AbstractMessageQueue(object):
         self.url = url
         self.name = name
 
-    def enqueue_task(self, message):
-        """Enqueue a task message onto a named task queue.
+    def enqueue_task(self, task_id, message):
+        """Enqueue task
 
-        :param queue: Queue name.
+        :param task_id: Task identifier.
         :param message: Serialized task message.
         """
         raise NotImplementedError('abstract method')
 
     def get(self, timeout=None):
-        """Get a task message from the queue
+        """Atomically get a serialized task message from the queue
+
+        Task processing has started when this method returns, which
+        means that the task heartbeat must be maintained if there
+        could be someone waiting on the result.
 
         :param timeout: Number of seconds to wait before returning None if no
             task is available in the queue. Wait forever if timeout is None
             (the default value).
-        :returns: A task message; None if timeout was reached before a task
-            arrived.
+        :returns: A serialized task message or None if timeout was reached
+            before a task arrived.
         """
         raise NotImplementedError('abstract method')
 
@@ -239,6 +243,8 @@ class AbstractMessageQueue(object):
         :returns: The deserialized result object.
         :raises: KeyError if the result was not available.
         """
+        if timeout < 0:
+            raise ValueError('negative timeout not supported')
         message = self.pop_result(task_id, timeout)
         if message is None:
             raise KeyError(task_id)

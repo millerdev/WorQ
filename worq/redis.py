@@ -24,22 +24,30 @@
 from __future__ import absolute_import
 import logging
 import redis
+import time
+import worq.const as const
 from urlparse import urlparse
-from worq.core import AbstractMessageQueue, DAY
+from worq.core import AbstractMessageQueue, DAY, DEFAULT
 
 log = logging.getLogger(__name__)
 
 QUEUE_PATTERN = 'worq:queue:%s'
+TASK_PATTERN = 'worq:task:%s:%s'
 RESULT_PATTERN = 'worq:result:%s:%s'
 TASKSET_PATTERN = 'worq:taskset:%s:%s'
 
 
 class RedisQueue(AbstractMessageQueue):
-    """Redis message queue"""
+    """Redis message queue
 
-    def __init__(self, url, *args, **kw):
-        redis_factory = kw.pop('redis_factory', redis.StrictRedis)
-        super(RedisQueue, self).__init__(url, *args, **kw)
+    WARNING this implementation depends on all task ids being unique.
+    Behavior is undefined if two different tasks are submitted with the
+    same task id.
+    """
+
+    def __init__(self, url, name=DEFAULT, initial_result_timeout=60,
+            redis_factory=redis.StrictRedis):
+        super(RedisQueue, self).__init__(url, name)
         urlobj = urlparse(url)
         if ':' in urlobj.netloc:
             host, port = urlobj.netloc.rsplit(':', 1)
@@ -48,42 +56,91 @@ class RedisQueue(AbstractMessageQueue):
         db = int(urlobj.path.lstrip('/'))
         self.redis = redis_factory(host, int(port), db=db)
         self.queue_key = QUEUE_PATTERN % self.name
+        self.initial_result_timeout = initial_result_timeout
 
-    def enqueue_task(self, message):
-        self.redis.rpush(self.queue_key, message)
+    def enqueue_task(self, task_id, message):
+        task_key = TASK_PATTERN % (self.name, task_id)
+        with self.redis.pipeline() as pipe:
+            pipe.hmset(task_key, {'task': message, 'status': const.ENQUEUED})
+            pipe.lpush(self.queue_key, task_id) # left push (head)
+            pipe.execute()
 
     def get(self, timeout=0):
-        item = self.redis.blpop(self.queue_key, timeout=timeout)
-        if item is None:
-            return item
-        return item[1]
+        queue = self.queue_key
+        end = time.time() + timeout
+        while True:
+            task_id = self.redis.brpoplpush(queue, queue, timeout=timeout)
+            if task_id is None:
+                return task_id # timeout
+
+            key = TASK_PATTERN % (self.name, task_id)
+            with self.redis.pipeline() as pipe:
+                pipe.hget(key, 'task')
+                pipe.hset(key, 'status', const.PROCESSING)
+                pipe.expire(key, self.initial_result_timeout)
+                pipe.lrem(queue, 1, task_id) # traverse head to tail
+                message, x, x, removed = pipe.execute()
+            if removed:
+                return message
+
+            if timeout != 0:
+                timeout = int(end - time.time())
+                if timeout <= 0:
+                    return None
 
     def discard_pending(self):
-        self.redis.delete(self.queue_key)
+        with self.redis.pipeline() as pipe:
+            pipe.lrange(self.queue_key, 0, -1)
+            pipe.delete(self.queue_key)
+            tasks = pipe.execute()[0]
+        if tasks:
+            self.redis.delete(*(TASK_PATTERN % (self.name, t) for t in tasks))
 
     def set_result(self, task_id, message, timeout):
         key = RESULT_PATTERN % (self.name, task_id)
-        pipe = self.redis.pipeline()
-        pipe.rpush(key, message)
-        pipe.expire(key, timeout)
-        pipe.execute()
+        task = TASK_PATTERN % (self.name, task_id)
+        with self.redis.pipeline() as pipe:
+            pipe.hset(task, 'status', const.COMPLETED)
+            pipe.expire(task, timeout)
+            pipe.rpush(key, message)
+            pipe.expire(key, timeout)
+            pipe.execute()
 
     def pop_result(self, task_id, timeout):
         key = RESULT_PATTERN % (self.name, task_id)
         if timeout == 0:
             return self.redis.lpop(key)
-        if timeout is None:
-            timeout = 0
-        result = self.redis.blpop([key], timeout=timeout)
-        return result if result is None else result[1]
+
+        task = TASK_PATTERN % (self.name, task_id)
+        end = None if timeout is None else time.time() + timeout
+        while True:
+            with self.redis.pipeline() as pipe:
+                pipe.ttl(task)
+                pipe.exists(task)
+                timeout, exists = pipe.execute()
+                if end:
+                    timeout = min(timeout, int(end - time.time()))
+            if timeout <= 0:
+                if not exists:
+                    # task has expired (heartbeat stopped)
+                    return self.redis.lpop(key)
+                # task is still enqueued (heartbeat not started yet)
+                timeout = 1 if end else 5
+            result = self.redis.blpop([key], timeout=timeout)
+            if result is None:
+                if end and time.time() > end:
+                    return None # timeout
+                continue
+            self.redis.delete(task)
+            return result[1]
 
     def update(self, taskset_id, num_tasks, message, timeout):
         key = TASKSET_PATTERN % (self.name, taskset_id)
         num = self.redis.rpush(key, message)
         if num == num_tasks:
-            pipe = self.redis.pipeline()
-            pipe.lrange(key, 0, -1)
-            pipe.delete(key)
-            return pipe.execute()[0]
+            with self.redis.pipeline() as pipe:
+                pipe.lrange(key, 0, -1)
+                pipe.delete(key)
+                return pipe.execute()[0]
         else:
             self.redis.expire(key, timeout)

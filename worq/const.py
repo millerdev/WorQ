@@ -21,3 +21,6 @@
 # SOFTWARE.
 
 DEFAULT = 'default'
+ENQUEUED = 'enqueued'
+PROCESSING = 'processing'
+COMPLETED = 'completed'
