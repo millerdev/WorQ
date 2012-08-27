@@ -23,6 +23,7 @@
 import logging
 import logging.config
 import os
+import re
 import signal
 import sys
 from contextlib import contextmanager
@@ -30,19 +31,12 @@ from nose.tools import nottest
 from os.path import dirname, exists, join
 from worq import get_broker, queue
 from worq.pool.process import WorkerPool, Error, run_in_subprocess
-from worq.task import Task, TaskSet
+from worq.task import Task, TaskSet, TaskExpired
 from worq.tests.util import assert_raises, eq_, eventually, tempdir, with_urls
 
 log = logging.getLogger(__name__)
 
 WAIT = 60 # default wait timeout (1 minute)
-
-def worker_pool(url, init_func, init_args, workers=1):
-    process_config(init_args[-1], 'Broker-%s' % os.getpid())
-
-    with discard_tasks(url):
-        pool = WorkerPool(url, workers=workers, get_task_timeout=1)
-        pool.start(init_func, init_args)
 
 
 @with_urls(exclude='memory')
@@ -89,7 +83,8 @@ def WorkerPool_sigterm_init_worker(url, tmp, logpath):
 
 @with_urls(exclude='memory')
 def test_WorkerPool_start_twice(url):
-    pool = WorkerPool(url, workers=1, get_task_timeout=1)
+    broker = get_broker(url)
+    pool = WorkerPool(broker, workers=1, get_task_timeout=1)
     with start_pool(pool, WorkerPool_start_twice_init_worker):
         with assert_raises(Error):
             pool.start(WorkerPool_start_twice_init_worker, handle_sigterm=False)
@@ -100,7 +95,8 @@ def WorkerPool_start_twice_init_worker(url):
 
 @with_urls(exclude='memory')
 def test_WorkerPool_max_worker_tasks(url):
-    pool = WorkerPool(url, workers=1, get_task_timeout=1, max_worker_tasks=3)
+    broker = get_broker(url)
+    pool = WorkerPool(broker, workers=1, get_task_timeout=1, max_worker_tasks=3)
     with start_pool(pool, WorkerPool_max_worker_tasks_init_worker):
 
         q = queue(url)
@@ -133,10 +129,39 @@ def WorkerPool_max_worker_tasks_init_worker(url):
     return broker
 
 
+@with_urls(exclude='memory')
+def test_WorkerPool_heartrate(url):
+    broker = get_broker(url)
+    pool = WorkerPool(broker, workers=1, get_task_timeout=1)
+    with start_pool(pool, WorkerPool_heartrate_init_worker):
+
+        q = queue(url)
+
+        res = Task(q.suicide_worker, heartrate=0.1, result_timeout=5)()
+        #assert res.wait(WAIT), repr(res)
+        assert res.wait(10), repr(res)
+        print repr(res)
+        with assert_raises(TaskExpired):
+            res.value
+
+def WorkerPool_heartrate_init_worker(url):
+    broker = get_broker(url)
+
+    @broker.expose
+    def suicide_worker():
+        log.warn("it's nice to work alone")
+        os.kill(os.getpid(), signal.SIGKILL) # force kill worker
+
+    broker.expose(os.getpid)
+
+    return broker
+
+
 @nottest # this is a very slow test, and doesn't seem that important
 @with_urls(exclude='memory')
 def test_WorkerPool_crashed_worker(url):
-    pool = WorkerPool(url, workers=1, get_task_timeout=1)
+    broker = get_broker(url)
+    pool = WorkerPool(broker, workers=1, get_task_timeout=1)
     with start_pool(pool, WorkerPool_crashed_worker_init_worker):
 
         q = queue(url)
@@ -273,6 +298,13 @@ def _logging_init(url, _logpath, _init, *args, **kw):
         sys.exit()
     return _init(url, *args, **kw)
 
+def worker_pool(url, init_func, init_args, workers=1):
+    process_config(init_args[-1], 'Broker-%s' % os.getpid())
+    broker = get_broker(url)
+    with discard_tasks(broker):
+        pool = WorkerPool(broker, workers=workers, get_task_timeout=1)
+        pool.start(init_func, init_args)
+
 @contextmanager
 def start_pool(pool, init_worker, init_args=(), init_kw=None, **kw):
     if init_kw is None:
@@ -283,7 +315,7 @@ def start_pool(pool, init_worker, init_args=(), init_kw=None, **kw):
 
         logpath = join(tmp, 'log')
         init_kw.update(_logpath=logpath, _init=init_worker)
-        with discard_tasks(pool.broker_url), printlog(logpath):
+        with discard_tasks(pool.broker), printlog(logpath):
             pool.start(_logging_init, init_args, init_kw,
                     handle_sigterm=False, **kw)
             try:
@@ -292,13 +324,11 @@ def start_pool(pool, init_worker, init_args=(), init_kw=None, **kw):
                 pool.stop()
 
 @contextmanager
-def discard_tasks(url):
-    #broker = get_broker(url)
-    #broker.discard_pending_tasks()
+def discard_tasks(broker):
     try:
         yield
     finally:
-        get_broker(url).discard_pending_tasks()
+        broker.discard_pending_tasks()
 
 @contextmanager
 def force_kill_on_exit(proc):

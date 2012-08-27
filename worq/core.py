@@ -22,32 +22,35 @@
 
 import logging
 from collections import defaultdict
-from cPickle import dumps, loads
+from cPickle import dumps, loads, HIGHEST_PROTOCOL
+from uuid import uuid4
 from weakref import ref as weakref
 
-from worq.const import DEFAULT
-from worq.task import (Queue, TaskSet, TaskSpace, DeferredResult,
-    TaskStatus, TaskFailure)
+from worq.const import DEFAULT, HOUR, MINUTE, DAY, STATUS_VALUES, TASK_EXPIRED
+from worq.task import (Queue, TaskSet, TaskSpace, FunctionTask, DeferredResult,
+    TaskFailure, TaskExpired)
 
 log = logging.getLogger(__name__)
-
-MINUTE = 60 # number of seconds in one minute
-HOUR = MINUTE * 60 # number of seconds in one hour
-DAY = HOUR * 24 # number of seconds in one day
 
 class Broker(object):
 
     task_options = set([
         'result_status',
         'result_timeout',
+        'heartrate',
         'taskset',
         'on_error',
+        'size',
     ])
 
     def __init__(self, message_queue):
         self.messages = message_queue
         self.tasks = {_stop_task.name: _stop_task}
         self.name = message_queue.name
+
+    @property
+    def url(self):
+        return self.messages.url
 
     def expose(self, obj):
         """Expose a TaskSpace or task callable.
@@ -64,14 +67,21 @@ class Broker(object):
                 raise ValueError('task %r conflicts with existing task' % name)
             self.tasks[name] = func
 
-    def start_worker(self):
-        """Start a worker
+    def start_worker(self, max_wait=None):
+        """Start a single worker
 
-        This is normally a blocking call.
+        TODO move to a utility class (this is a single-threaded worker pool).
+
+        :param max_wait: Maximum number of seconds to wait for a task before
+            stopping the worker. A value of None (the default) makes this a
+            blocking call.
         """
         try:
-            for message in self.messages:
-                self.invoke(message)
+            while True:
+                task = self.next_task(timeout=max_wait)
+                if task is None:
+                    break
+                task.invoke(self)
         except _StopWorker:
             log.info('worker stopped')
 
@@ -81,7 +91,9 @@ class Broker(object):
         WARNING this is only meant for testing purposes. It will likely not do
         what you expect in an environment with more than one worker.
         """
-        self.enqueue('stop', _stop_task.name, (), {}, {})
+        stop = FunctionTask(_stop_task.name, (), {}, {})
+        stop.id = 'stop'
+        self.enqueue(stop)
 
     def discard_pending_tasks(self):
         """Discard pending tasks from queue"""
@@ -90,91 +102,119 @@ class Broker(object):
     def queue(self, target=''):
         return Queue(self, target)
 
-    def enqueue(self, task_id, task_name, args, kw, options):
+    def enqueue(self, task):
         queue = self.name # TODO remove this
+        options = task.options
         unknown_options = set(options) - self.task_options
         if unknown_options:
             raise ValueError('unrecognized task options: %s'
                 % ', '.join(unknown_options))
-        log.debug('enqueue %s [%s:%s]', task_name, queue, task_id)
-        message = dumps((task_id, task_name, args, kw, options))
-        result_status = options.get('result_status', False)
-        if result_status or 'result_timeout' in options:
-            result = self.messages.deferred_result(task_id)
-            if result_status:
-                timeout = options.get('result_timeout', DAY)
-                status = TaskStatus('enqueued')
-                self.messages.set_result(task_id, dumps(status), timeout)
+        log.debug('enqueue %s [%s:%s]', task.name, queue, task.id)
+        message = self.serialize(task)
+        if options.get('result_status', False) or 'result_timeout' in options:
+            result = DeferredResult(self, task.id, task.name, task.heartrate)
         else:
             result = None
-        self.messages.enqueue_task(task_id, message)
+        self.messages.enqueue_task(task.id, message, result)
         return result
 
-    def invoke(self, message):
+    def set_status(self, task, value):
+        """Set the status of a task"""
+        if value not in STATUS_VALUES:
+            value = self.serialize(value)
+        self.messages.set_status(task.id, value)
+
+    def status(self, result):
+        """Get the status of a deferred result"""
+        message = self.messages.get_status(result.id)
+        if message is None:
+            return message
+        if message in STATUS_VALUES:
+            return message
+        return self.deserialize(message)
+
+    def next_task(self, timeout=None):
+        """Get the next task from the queue.
+
+        :param timeout: See ``AbstractMessageQueue.get``.
+        :returns: A task object. None on timeout expiration or if the task
+            could not be deserialized.
+        """
+        message = self.messages.get(timeout=timeout)
+        if message is None:
+            return message
+        task_id, message = message
         try:
-            task_id, task_name, args, kw, options = loads(message)
+            return self.deserialize(message)
         except Exception:
-            log.error('cannot load task message: %s', message, exc_info=True)
-            return
-        queue = self.name
-        log.debug('invoke %s [%s:%s]', task_name, queue, task_id)
-        timeout = options.get('result_timeout', DAY)
-        result_status = options.get('result_status', False)
-        if result_status:
-            status = TaskStatus('processing')
-            self.messages.set_result(task_id, dumps(status), timeout)
-            def update_status(value):
-                status = TaskStatus(value)
-                self.messages.set_result(task_id, dumps(status), timeout)
-            kw['update_status'] = update_status
-        try:
-            try:
-                task = self.tasks[task_name]
-            except KeyError:
-                result = TaskFailure(task_name, queue, task_id, 'no such task')
-                log.error(result)
-            else:
-                result = task(*args, **kw)
-        except _StopWorker:
-            result = TaskFailure(task_name, queue, task_id, 'worker stopped')
-            raise
-        except Exception, err:
-            log.error('task failed: %s [%s:%s]',
-                task_name, queue, task_id, exc_info=True)
-            result = TaskFailure(task_name, queue, task_id,
-                '%s: %s' % (type(err).__name__, err))
-        except BaseException, err:
-            log.error('worker died in task: %s [%s:%s]',
-                task_name, queue, task_id, exc_info=True)
-            result = TaskFailure(task_name, queue, task_id,
-                '%s: %s' % (type(err).__name__, err))
-            raise
-        finally:
-            if 'taskset' in options:
-                self.process_taskset(queue, options['taskset'], result)
-            elif result_status or 'result_timeout' in options:
-                message = dumps(result)
-                self.messages.set_result(task_id, message, timeout)
+            log.error('cannot deserialize task [%s:%s]',
+                self.name, task_id, exc_info=True)
+            return None
 
-    def process_taskset(self, queue, taskset, result):
-        taskset_id, task_name, args, kw, options, num = taskset
-        timeout = options.get('result_timeout', DAY)
-        if (options.get('on_error', TaskSet.FAIL) == TaskSet.FAIL
-                and isinstance(result, TaskFailure)):
-            # suboptimal: pending tasks in the set will continue to be executed
-            # and their results will be persisted if they succeed.
-            message = dumps(TaskFailure(
-                task_name, queue, taskset_id, 'subtask(s) failed'))
-            self.messages.set_result(taskset_id, message, timeout)
+    def invoke(self, task):
+        """Invoke the given task (normally only called by a worker)"""
+        task.invoke(self)
+
+    def heartbeat(self, task):
+        """Extend task result timeout"""
+        self.messages.set_task_timeout(task.id, task.heartrate * 2 + 5)
+
+    def serialize(self, obj):
+        return dumps(obj, HIGHEST_PROTOCOL)
+
+    def deserialize(self, message):
+        return loads(message)
+
+    def set_result(self, task, result):
+        """Persist result object.
+
+        :param task: Task object for which to set the result.
+        :param result: Result object.
+        """
+        message = self.serialize(result)
+        self.messages.set_result(task.id, message, task.result_timeout)
+
+    def pop_result(self, task, timeout=0):
+        """Pop and deserialize a task's result object
+
+        :param task: An object with ``id`` and ``name`` attributes
+            representing the task.
+        :param timeout: Length of time to wait for the result. The default
+            behavior is to return immediately (no wait). Wait indefinitely
+            if None.
+        :returns: The deserialized result object.
+        :raises: KeyError if the result was not available.
+        :raises: TaskExpired if the task expired before a result was returned.
+            A task normally only expires if the pool loses its ability
+            to communicate with the worker performing the task.
+        """
+        if timeout < 0:
+            raise ValueError('negative timeout not supported')
+        message = self.messages.pop_result(task.id, timeout)
+        if message is None:
+            raise KeyError(task.id)
+        if message is TASK_EXPIRED:
+            result = message
         else:
-            results = self.messages.update(
-                taskset_id, num, dumps(result), timeout)
-            if results is not None:
-                args = ([loads(r) for r in results],) + args
-                self.enqueue(taskset_id, task_name, args, kw, options)
+            result = self.deserialize(message)
+        if result is TASK_EXPIRED:
+            raise TaskExpired(task.name, self.name, task.id,
+                'task expired before a result was returned')
+        return result
 
-    def deferred_result(self, task_id):
-        return self.messages.deferred_result(task_id)
+    def task_failed(self, task):
+        """Signal that the given task has failed."""
+        self.messages.discard_result(task.id, self.serialize(TASK_EXPIRED))
+
+    def init_taskset(self, taskset):
+        """Initialize taskset result storage
+
+        :returns: A DeferredResult object.
+        """
+        result = DeferredResult(
+            self, taskset.id, taskset.name, taskset.heartrate)
+        self.messages.init_taskset(taskset.id, result)
+        return result
 
 
 class AbstractMessageQueue(object):
@@ -186,6 +226,8 @@ class AbstractMessageQueue(object):
     3. Task heartbeats extend result expiration as needed.
     4. Task finishes and result value is saved.
 
+    All methods must be thread-safe.
+
     :param url: URL used to identify the queue.
     :param name: Queue name.
     """
@@ -194,11 +236,13 @@ class AbstractMessageQueue(object):
         self.url = url
         self.name = name
 
-    def enqueue_task(self, task_id, message):
+    def enqueue_task(self, task_id, message, result):
         """Enqueue task
 
         :param task_id: Task identifier.
         :param message: Serialized task message.
+        :param result: A DeferredResult object for the task. None if the task
+            options do not require result tracking.
         """
         raise NotImplementedError('abstract method')
 
@@ -212,43 +256,34 @@ class AbstractMessageQueue(object):
         :param timeout: Number of seconds to wait before returning None if no
             task is available in the queue. Wait forever if timeout is None
             (the default value).
-        :returns: A serialized task message or None if timeout was reached
-            before a task arrived.
+        :returns: A serialized two-tuple (<task_id>, <message>) or None if
+            timeout was reached before a task arrived.
         """
         raise NotImplementedError('abstract method')
-
-    def __iter__(self):
-        """Return an iterator that yields task messages.
-
-        Task iteration blocks when there are no pending tasks to execute.
-        """
-        while True:
-            yield self.get()
 
     def discard_pending(self):
         """Discard pending tasks from queue"""
         raise NotImplementedError('abstract method')
 
-    def deferred_result(self, task_id):
-        """Return a DeferredResult object for the given task id"""
-        return DeferredResult(self, task_id)
+    def set_task_timeout(self, task_id, timeout):
+        """Set a timeout on the task result"""
+        raise NotImplementedError('abstract method')
 
-    def pop(self, task_id, timeout=0):
-        """Pop and deserialize the result object for the given task id
+    def set_status(self, task_id, message):
+        """Set the status of a task
 
         :param task_id: Unique task identifier string.
-        :param timeout: Length of time to wait for the result. The default
-            behavior is to return immediately (no wait). Wait indefinitely
-            if None (dangerous).
-        :returns: The deserialized result object.
-        :raises: KeyError if the result was not available.
+        :param message: A serialized task status value.
         """
-        if timeout < 0:
-            raise ValueError('negative timeout not supported')
-        message = self.pop_result(task_id, timeout)
-        if message is None:
-            raise KeyError(task_id)
-        return loads(message)
+        raise NotImplementedError('abstract method')
+
+    def get_status(self, task_id):
+        """Get the status of a task
+
+        :param task_id: Unique task identifier string.
+        :returns: A serialized task status object or None.
+        """
+        raise NotImplementedError('abstract method')
 
     def set_result(self, task_id, message, timeout):
         """Persist serialized result message.
@@ -266,11 +301,33 @@ class AbstractMessageQueue(object):
         :param task_id: Unique task identifier string.
         :param timeout: Length of time to wait for the result. Wait indefinitely
             if None. Return immediately if timeout is zero (0).
-        :returns: The result message; None if not found.
+        :returns: The result message. None on timeout or
+            ``worq.const.TASK_EXPIRED`` if the task expired before a result
+            was available.
         """
         raise NotImplementedError('abstract method')
 
-    def update(self, taskset_id, num_tasks, message, timeout):
+    def discard_result(self, task_id, task_expired_token):
+        """Discard the result for the given task.
+
+        A call to ``pop_result`` after this is invoked should return a
+        task expired response.
+
+        :param task_id: The task identifier.
+        :param task_expired_token: A message that can be sent to blocking
+            actors to signify that the task has expired.
+        """
+        raise NotImplementedError('abstract method')
+
+    def init_taskset(self, taskset_id, result):
+        """Initialize a taskset result storage
+
+        :param taskset_id: (string) The taskset unique identifier.
+        :param result: A DeferredResult object for the task.
+        """
+        raise NotImplementedError('abstract method')
+
+    def update_taskset(self, taskset_id, num_tasks, message, timeout):
         """Update the result set for a task set, return all results if complete
 
         This operation is atomic, meaning that only one caller will ever be

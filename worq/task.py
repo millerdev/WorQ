@@ -20,10 +20,13 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+import logging
 import time
 from uuid import uuid4
 
-from worq.const import DEFAULT
+from worq.const import DAY, DEFAULT, PROCESSING
+
+log = logging.getLogger(__name__)
 
 
 class Queue(object):
@@ -107,9 +110,8 @@ class Task(object):
         return self.queue._Queue__broker
 
     def __call__(self, *args, **kw):
-        id = uuid4().hex
-        return self.queue._Queue__broker.enqueue(
-            id, self.name, args, kw, self.options)
+        task = FunctionTask(self.name, args, kw, self.options)
+        return self.queue._Queue__broker.enqueue(task)
 
     def with_options(self, options):
         """Clone this task with a new set of options"""
@@ -119,26 +121,93 @@ class Task(object):
         return '<Task %s [%s]>' % (self.name, self.queue._Queue__queue)
 
 
+class FunctionTask(object):
+
+    def __init__(self, name, args, kw, options):
+        self.id = uuid4().hex
+        self.name = name
+        self.args = args
+        self.kw = kw
+        self.options = options
+
+    @property
+    def heartrate(self):
+        return self.options.get('heartrate', 30)
+
+    @property
+    def result_timeout(self):
+        return self.options.get('result_timeout', DAY)
+
+    def invoke(self, broker):
+        queue = broker.name
+        options = self.options
+        log.debug('invoke %s [%s:%s]', self.name, queue, self.id)
+        result_status = options.get('result_status', False)
+        if result_status:
+            broker.set_status(self, PROCESSING)
+            def update_status(value):
+                broker.set_status(self, value)
+            self.kw['update_status'] = update_status
+        from worq.core import _StopWorker # HACK remove this
+        try:
+            try:
+                task = broker.tasks[self.name]
+            except KeyError:
+                result = TaskFailure(self.name, queue, self.id, 'no such task')
+                log.error(result)
+            else:
+                result = task(*self.args, **self.kw)
+        except _StopWorker:
+            result = TaskFailure(self.name, queue, self.id, 'worker stopped')
+            raise
+        except Exception, err:
+            log.error('task failed: %s [%s:%s]',
+                self.name, queue, self.id, exc_info=True)
+            result = TaskFailure(self.name, queue, self.id,
+                '%s: %s' % (type(err).__name__, err))
+        except BaseException, err:
+            log.error('worker died in task: %s [%s:%s]',
+                self.name, queue, self.id, exc_info=True)
+            result = TaskFailure(self.name, queue, self.id,
+                '%s: %s' % (type(err).__name__, err))
+            raise
+        finally:
+            if 'taskset' in options:
+                self.process_taskset(broker, options['taskset'], result)
+            elif result_status or 'result_timeout' in options:
+                broker.set_result(self, result)
+
+    def process_taskset(self, broker, taskset, result):
+        options = taskset.options
+        if (options.get('on_error', TaskSet.FAIL) == TaskSet.FAIL
+                and isinstance(result, TaskFailure)):
+            # suboptimal: pending tasks in the set will continue to be executed
+            # and their results will be persisted if they succeed.
+            fail = TaskFailure(
+                taskset.name, broker.name, taskset.id, 'subtask(s) failed')
+            broker.set_result(taskset, fail)
+        else:
+            timeout = taskset.result_timeout
+            results = broker.messages.update_taskset(
+                taskset.id, options['size'], broker.serialize(result), timeout)
+            if results is not None:
+                loads = broker.deserialize
+                taskset.args = ([loads(r) for r in results],) + taskset.args
+                broker.enqueue(taskset)
+
+
 class DeferredResult(object):
     """Deferred result object
 
     Not thread-safe.
     """
 
-    def __init__(self, store, task_id):
-        self.store = store
+    def __init__(self, broker, task_id, task_name, heartrate):
+        self.broker = broker
         self.id = task_id
+        self.name = task_name
+        self.heartrate = heartrate * 2
         self._status = None
-
-    def _fetch(self, timeout=0):
-        try:
-            value = self.store.pop(self.id, timeout=timeout)
-        except KeyError:
-            return
-        if isinstance(value, TaskStatus):
-            self._status = value.value
-        else:
-            self._value = value
 
     @property
     def value(self):
@@ -148,14 +217,19 @@ class DeferredResult(object):
         :raises: AttributeError if the task has not yet completed. TaskFailure
             if the task failed for any reason.
         """
-        if isinstance(self._value, TaskFailure):
-            raise self._value
-        return self._value
+        self.wait(0)
+        try:
+            value = self._value
+        except AttributeError:
+            raise AttributeError('DeferredResult value not available')
+        if isinstance(value, TaskFailure):
+            raise value
+        return value
 
     @property
     def status(self):
         """Get task status"""
-        self._fetch()
+        self._status = self.broker.status(self)
         return self._status
 
     def wait(self, timeout):
@@ -170,24 +244,19 @@ class DeferredResult(object):
             to deadlock.
         :returns: True if the result is available, otherwise False.
         """
-        if timeout is None:
-            end = None
-        else:
-            end = time.time() + timeout
-        while not hasattr(self, '_value'):
-            self._fetch(timeout)
-            if timeout == 0:
-                break
-            if timeout is not None:
-                timeout = max(0, int(end - time.time()))
+        if not hasattr(self, '_value'):
+            try:
+                value = self.broker.pop_result(self, timeout=timeout)
+            except KeyError:
+                return False
+            except TaskExpired, err:
+                value = err
+            self._value = value
         return hasattr(self, '_value')
 
     def __nonzero__(self):
         """Return True if the result has arrived, otherwise False."""
-        if not hasattr(self, '_value'):
-            self._fetch()
-            return hasattr(self, '_value')
-        return True
+        return self.wait(0)
 
     def __repr__(self):
         if self:
@@ -199,7 +268,8 @@ class DeferredResult(object):
             status = self._status
         else:
             status = 'incomplete'
-        return '<DeferredResult %s %s>' % (self.id, status)
+        args = (self.name, self.broker.name, self.id, status)
+        return '<DeferredResult %s [%s:%s] %s>' % args
 
 
 class TaskSet(object):
@@ -284,16 +354,17 @@ class TaskSet(object):
         TaskSet.add(*self_task_args, **kw)
         self = self_task_args[0]
         task, args, kw = self.tasks.pop()
-        num = len(self.tasks)
-        taskset_id = uuid4().hex
-        if self.options.get('result_timeout') is not None:
-            result = task.broker.deferred_result(taskset_id)
-        else:
-            result = None
-        options = {'taskset':
-            (taskset_id, task.name, args, kw, self.options, num)}
+        opts = dict(self.options, size=len(self.tasks))
+        taskset = FunctionTask(task.name, args, kw, opts)
+        result = task.broker.init_taskset(taskset)
+        result.__subsets = []
+        options = {'taskset': taskset}
         for t, a, k in self.tasks:
-            t.with_options(options)(*a, **k)
+            r = t.with_options(options)(*a, **k)
+            # HACK should not set result attributes here. this needs to be formalized
+            if isinstance(t, TaskSet) and result is not None:
+                assert r is not None
+                result.__subsets.append(r)
         return result
 
 
@@ -328,7 +399,14 @@ class TaskSpace(object):
 
 
 class TaskFailure(Exception):
-    """Task failure exception class"""
+    """Task failure exception class
+
+    Initialize with the following positional arguments:
+        1. Task name
+        2. Queue name
+        3. Task id
+        4. Error text
+    """
 
     @property
     def task_name(self):
@@ -350,13 +428,16 @@ class TaskFailure(Exception):
         return '%s [%s:%s] %s' % self.args
 
     def __repr__(self):
-        return '<TaskFailure %s>' % self
+        return '<%s %s>' % (type(self).__name__, self)
 
     def __eq__(self, other):
         return isinstance(other, TaskFailure) and repr(self) == repr(other)
 
     def __ne__(self, other):
         return not self.__eq__(other)
+
+
+class TaskExpired(TaskFailure): pass
 
 
 class TaskStatus(object):

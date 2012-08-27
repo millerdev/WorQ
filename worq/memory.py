@@ -20,14 +20,14 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-"""In-memory message queue and result store.
-
-MemoryQueue is not suitable for long-running processes that use TaskSets.
-"""
+"""In-memory message queue and result store."""
 import logging
-from worq.core import AbstractMessageQueue, DEFAULT
 from Queue import Queue, Empty
-from weakref import WeakValueDictionary, WeakKeyDictionary
+from threading import Lock
+from weakref import WeakValueDictionary
+
+import worq.const as const
+from worq.core import AbstractMessageQueue
 
 log = logging.getLogger(__name__)
 
@@ -40,7 +40,7 @@ class MemoryQueue(AbstractMessageQueue):
     """
 
     @classmethod
-    def factory(cls, url, name=DEFAULT, *args, **kw):
+    def factory(cls, url, name=const.DEFAULT, *args, **kw):
         obj = _REFS.get((url, name))
         if obj is None:
             obj = _REFS[(url, name)] = cls(url, name, *args, **kw)
@@ -50,10 +50,16 @@ class MemoryQueue(AbstractMessageQueue):
         super(MemoryQueue, self).__init__(*args, **kw)
         self.queue = Queue()
         self.results_by_task = WeakValueDictionary()
-        self.tasksets = {}
 
-    def enqueue_task(self, task_id, message):
-        self.queue.put(message)
+    def enqueue_task(self, task_id, message, result):
+        # FIXME given result may not be the real result object.
+        # Should this method return the real one?
+        self.queue.put((task_id, message))
+        if result is not None:
+            result = self.results_by_task.setdefault(task_id, result)
+            result.__status = const.ENQUEUED
+            if not hasattr(result, '_%s__result' % type(self).__name__):
+                result.__result = Queue()
 
     def get(self, timeout=None):
         # TODO handle Empty, return None
@@ -66,14 +72,17 @@ class MemoryQueue(AbstractMessageQueue):
             except Empty:
                 break
 
-    def deferred_result(self, task_id):
-        result = self.results_by_task.get(task_id)
-        if result is None:
-            result = super(MemoryQueue, self).deferred_result(task_id)
-            self.results_by_task[task_id] = result
-            result.__status = None
-            result.__result = Queue()
-        return result
+    def set_task_timeout(self, task_id, timeout):
+        pass
+
+    def set_status(self, task_id, message):
+        result_obj = self.results_by_task.get(task_id)
+        if result_obj is not None:
+            result_obj.__status = message
+
+    def get_status(self, task_id):
+        result_obj = self.results_by_task.get(task_id)
+        return None if result_obj is None else result_obj.__status
 
     def set_result(self, task_id, message, timeout):
         result_obj = self.results_by_task[task_id]
@@ -90,9 +99,24 @@ class MemoryQueue(AbstractMessageQueue):
             result = None
         return result
 
-    def update(self, taskset_id, num, message, timeout):
-        """not thread-safe and leaks memory if a taskset is not completed"""
-        value = self.tasksets.setdefault(taskset_id, [])
-        value.append(message)
-        if len(value) == num:
-            return self.tasksets.pop(taskset_id)
+# untested
+#    def discard_result(self, task_id, task_expired_token):
+#        result_obj = self.results_by_task.pop(task_id)
+#        if result_obj is not None:
+#            result_obj.__result.put(task_expired_token)
+
+    def init_taskset(self, taskset_id, result):
+        if result is not None:
+            self.results_by_task[taskset_id] = result
+            result.__result = Queue() # final result queue
+            result.__results = [] # taskset results
+            result.__lock = Lock()
+
+    def update_taskset(self, taskset_id, num, message, timeout):
+        result_obj = self.results_by_task.get(taskset_id)
+        if result_obj is not None:
+            with result_obj.__lock:
+                value = result_obj.__results
+                value.append(message)
+                if len(value) == num:
+                    return value

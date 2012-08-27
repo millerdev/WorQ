@@ -53,20 +53,21 @@ def with_urls(test=None, exclude=None):
     return functools.partial(with_urls, exclude=exclude)
 
 @contextmanager
-def thread_worker(broker, lock=None):
+def thread_worker(broker, lock=None, timeout=123):
     if lock is None:
         def run():
             try:
-                broker.start_worker()
+                broker.start_worker(timeout)
             except:
                 log.error('worker crashed', exc_info=True)
     else:
         # acquire lock prior to invoking each task
         def run():
             try:
-                for message in broker.messages:
+                while True:
+                    task = broker.next_task(timeout=timeout)
                     lock.acquire()
-                    broker.invoke(message)
+                    broker.invoke(task)
             except _StopWorker:
                 log.info('worker stopped')
             except:
@@ -131,8 +132,10 @@ def assert_raises(exc_class, msg=None):
     try:
         yield
     except exc_class as exc:
-        if msg is not None:
+        if isinstance(msg, basestring):
             eq_(str(exc), msg)
+        elif msg is not None:
+            msg.search(str(exc))
     else:
         raise AssertionError('%s not raised' % exc_class.__name__)
 

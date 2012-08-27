@@ -57,7 +57,7 @@ class Error(Exception): pass
 class WorkerPool(object):
     """Multi-process worker pool
 
-    :param broker_url: Broker URL.
+    :param broker: Broker object.
     :param workers: Number of workers to maintain in the pool.
     :param get_task_timeout: Number of seconds to block while waiting for a new
         task to arrive on the queue. The default is 10 seconds. This timeout
@@ -68,12 +68,12 @@ class WorkerPool(object):
         before retiring the worker and spawning a new one in its place.
     """
 
-    def __init__(self, broker_url,
+    def __init__(self, broker,
             workers=None,
             get_task_timeout=10,
             max_worker_tasks=None,
         ):
-        self.broker_url = broker_url
+        self.broker = broker
         if workers is None:
             try:
                 workers = cpu_count()
@@ -106,7 +106,7 @@ class WorkerPool(object):
         log.info('starting worker pool...')
 
         for n in range(self.workers):
-            worker = WorkerProxy(self.broker_url,
+            worker = WorkerProxy(self.broker,
                 init_func, init_args, init_kwargs, self.max_worker_tasks)
             self._workers.append(worker)
             self._worker_queue.put(worker)
@@ -127,8 +127,7 @@ class WorkerPool(object):
 
     def _consume_tasks(self):
         timeout = self.get_task_timeout
-        broker = get_broker(self.broker_url)
-        get_task = broker.messages.get
+        get_task = self.broker.next_task
         get_worker = self._worker_queue.get
         put_worker = self._worker_queue.put
         try:
@@ -136,12 +135,6 @@ class WorkerPool(object):
                 worker = get_worker()
                 if worker == STOP:
                     break
-                # TODO prevent job loss on unexpected shutdown (use ACK?).
-                # To be resilient to job loss, do not care about the loss.
-                # Instead, the result (if it is being monitored) must tell
-                # its owner that the job was lost. If no result is being
-                # monitored then the owner must have some other way to
-                # determine if the job failed.
                 task = get_task(timeout)
                 if task is None:
                     put_worker(worker)
@@ -181,7 +174,7 @@ class WorkerProxy(object):
     def __init__(self, *args):
         self.pid = 'not-started'
         self.queue = ThreadQueue()
-        self.thread = Thread(target=self._proxy_loop, args=(args,))
+        self.thread = Thread(target=self._proxy_loop, args=args)
         self.thread.start()
 
     def execute(self, task, return_to_pool):
@@ -192,7 +185,8 @@ class WorkerProxy(object):
         self.queue = None
         self.thread.join()
 
-    def _proxy_loop(self, args):
+    def _proxy_loop(self, broker, *args):
+        args = (broker.url,) + args
         is_debug = partial(log.isEnabledFor, logging.DEBUG)
         pid = os.getpid()
         proc = None
@@ -228,10 +222,11 @@ class WorkerProxy(object):
 
             try:
                 child.send(task)
-                while not child.poll(WORKER_POLL_INTERVAL):
+                while not child.poll(task.heartrate):
                     if not proc.is_alive():
+                        broker.task_failed(task)
                         raise Error('unknown cause of death')
-                    # TODO update result heartbeat
+                    broker.heartbeat(task)
                 status = child.recv()
             except Exception:
                 log.error('%s died unexpectedly', str(self), exc_info=True)

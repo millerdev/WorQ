@@ -23,21 +23,6 @@ SOFTWARE.
 -------------------------------------------------------------------------------
 
 TODO
-- Fix TODO items in worq.pool.process
-    - Add support for heartbeat/keepalive
-      Atomically set result timeout when task processing begins
-x       - Refactor/simplify broker to manage a single queue (for BRPOPLPUSH)
-x       - Combine queue and result store (they need to interact)
-x           can always make a hybrid (ex: Redis/Postgres) backend if needed
-
-        BRPOPLPUSH next task id
-        atomically:
-            EXPIRE result
-            GET task details
-            LREM task id from queue (process task if successful)
-
-    - Improve status/heartbeat handling to not process old status values.
-
 - Include task name in repr of DeferredResult
 
 - Improve task serialization for fast option and task_id access (avoid unpickle of parameters, etc.)
@@ -56,6 +41,19 @@ x           can always make a hybrid (ex: Redis/Postgres) backend if needed
     - task/result has a state machine: pending, in process, completed, lost...
     - running task can update its status on its (in process) result object
 - Skip tests if queue backend is not running
+
+x - Fix TODO items in worq.pool.process
+x   - Add support for heartbeat/keepalive
+x     Atomically set result timeout when task processing begins
+x       - Refactor/simplify broker to manage a single queue (for BRPOPLPUSH)
+x       - Combine queue and result store (they need to interact)
+x           can always make a hybrid (ex: Redis/Postgres) backend if needed
+x       BRPOPLPUSH next task id
+x       atomically:
+x           EXPIRE result
+x           GET task details
+x           LREM task id from queue (process task if successful)
+x   - Improve status/heartbeat handling to not process old status values.
 
 x Pass TaskStatus objects through result queue (avoid extra status key)
 x MIT license

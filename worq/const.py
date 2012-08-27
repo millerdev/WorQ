@@ -20,7 +20,17 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+MINUTE = 60 # number of seconds in one minute
+HOUR = MINUTE * 60 # number of seconds in one hour
+DAY = HOUR * 24 # number of seconds in one day
+
 DEFAULT = 'default'
+
+PENDING = 'pending'
 ENQUEUED = 'enqueued'
 PROCESSING = 'processing'
 COMPLETED = 'completed'
+
+STATUS_VALUES = [PENDING, ENQUEUED, PROCESSING, COMPLETED]
+
+class TASK_EXPIRED(object): pass
