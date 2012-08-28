@@ -45,7 +45,7 @@ def test_WorkerPool_sigterm(url):
 
         logpath = join(tmp, 'output.log')
         proc = run_in_subprocess(worker_pool, url,
-            WorkerPool_sigterm_init_worker, (tmp, logpath), workers=3)
+            WorkerPool_sigterm_init, (tmp, logpath), workers=3)
 
         with printlog(logpath), force_kill_on_exit(proc):
 
@@ -61,7 +61,7 @@ def test_WorkerPool_sigterm(url):
             eventually(reader(tmp, 'func.out'), 'text')
             eventually(verify_shutdown(proc), True, timeout=WAIT)
 
-def WorkerPool_sigterm_init_worker(url, tmp, logpath):
+def WorkerPool_sigterm_init(url, tmp, logpath):
     process_config(logpath, 'Worker-%s' % os.getpid())
     broker = get_broker(url)
 
@@ -84,20 +84,18 @@ def WorkerPool_sigterm_init_worker(url, tmp, logpath):
 @with_urls(exclude='memory')
 def test_WorkerPool_start_twice(url):
     broker = get_broker(url)
-    pool = WorkerPool(broker, workers=1, get_task_timeout=1)
-    with start_pool(pool, WorkerPool_start_twice_init_worker):
+    pool = WorkerPool(broker, get_broker, workers=1)
+    with start_pool(pool):
         with assert_raises(Error):
-            pool.start(WorkerPool_start_twice_init_worker, handle_sigterm=False)
-
-def WorkerPool_start_twice_init_worker(url):
-    return get_broker(url)
+            pool.start(handle_sigterm=False)
 
 
 @with_urls(exclude='memory')
 def test_WorkerPool_max_worker_tasks(url):
     broker = get_broker(url)
-    pool = WorkerPool(broker, workers=1, get_task_timeout=1, max_worker_tasks=3)
-    with start_pool(pool, WorkerPool_max_worker_tasks_init_worker):
+    pool = WorkerPool(broker, WorkerPool_max_worker_tasks_init,
+        workers=1, max_worker_tasks=3)
+    with start_pool(pool):
 
         q = queue(url)
 
@@ -113,7 +111,7 @@ def test_WorkerPool_max_worker_tasks(url):
         eq_([r[1] for r in results], [1, 2, 3, 1])
         eq_(len(set(r[0] for r in results)), 2)
 
-def WorkerPool_max_worker_tasks_init_worker(url):
+def WorkerPool_max_worker_tasks_init(url):
     broker = get_broker(url)
     calls = [0]
 
@@ -132,8 +130,8 @@ def WorkerPool_max_worker_tasks_init_worker(url):
 @with_urls(exclude='memory')
 def test_WorkerPool_heartrate(url):
     broker = get_broker(url)
-    pool = WorkerPool(broker, workers=1, get_task_timeout=1)
-    with start_pool(pool, WorkerPool_heartrate_init_worker):
+    pool = WorkerPool(broker, WorkerPool_heartrate_init, workers=1)
+    with start_pool(pool):
 
         q = queue(url)
 
@@ -144,7 +142,7 @@ def test_WorkerPool_heartrate(url):
         with assert_raises(TaskExpired):
             res.value
 
-def WorkerPool_heartrate_init_worker(url):
+def WorkerPool_heartrate_init(url):
     broker = get_broker(url)
 
     @broker.expose
@@ -161,8 +159,8 @@ def WorkerPool_heartrate_init_worker(url):
 @with_urls(exclude='memory')
 def test_WorkerPool_crashed_worker(url):
     broker = get_broker(url)
-    pool = WorkerPool(broker, workers=1, get_task_timeout=1)
-    with start_pool(pool, WorkerPool_crashed_worker_init_worker):
+    pool = WorkerPool(broker, WorkerPool_crashed_worker_init, workers=1)
+    with start_pool(pool):
 
         q = queue(url)
 
@@ -176,7 +174,7 @@ def test_WorkerPool_crashed_worker(url):
         assert res.wait(WAIT), repr(res)
         assert res.value != pid, pid
 
-def WorkerPool_crashed_worker_init_worker(url):
+def WorkerPool_crashed_worker_init(url):
     broker = get_broker(url)
 
     @broker.expose
@@ -195,7 +193,7 @@ def test_WorkerPool_worker_shutdown_on_parent_die(url):
 
         logpath = join(tmp, 'output.log')
         proc = run_in_subprocess(worker_pool, url,
-            WorkerPool_worker_shutdown_on_parent_die_init_worker,
+            WorkerPool_worker_shutdown_on_parent_die_init,
             (tmp, logpath))
 
         with printlog(logpath), force_kill_on_exit(proc):
@@ -213,7 +211,7 @@ def test_WorkerPool_worker_shutdown_on_parent_die(url):
             os.kill(res.value, signal.SIGTERM) # clean up
             raise
 
-def WorkerPool_worker_shutdown_on_parent_die_init_worker(url, tmp, logpath):
+def WorkerPool_worker_shutdown_on_parent_die_init(url, tmp, logpath):
     process_config(logpath, 'Worker-%s' % os.getpid())
     broker = get_broker(url)
 
@@ -302,22 +300,19 @@ def worker_pool(url, init_func, init_args, workers=1):
     process_config(init_args[-1], 'Pool-%s' % os.getpid())
     broker = get_broker(url)
     with discard_tasks(broker):
-        pool = WorkerPool(broker, workers=workers, get_task_timeout=1)
-        pool.start(init_func, init_args)
+        pool = WorkerPool(broker, init_func, init_args, workers=workers)
+        pool.start(timeout=1)
 
 @contextmanager
-def start_pool(pool, init_worker, init_args=(), init_kw=None, **kw):
-    if init_kw is None:
-        init_kw = {}
+def start_pool(pool, timeout=1):
     with tempdir() as tmp:
-
         assert exists(tmp), tmp
-
         logpath = join(tmp, 'log')
-        init_kw.update(_logpath=logpath, _init=init_worker)
+        pool.init_kwargs.setdefault('_logpath', logpath)
+        pool.init_kwargs.setdefault('_init', pool.init_func)
+        pool.init_func = _logging_init
         with discard_tasks(pool.broker), printlog(logpath):
-            pool.start(_logging_init, init_args, init_kw,
-                    handle_sigterm=False, **kw)
+            pool.start(timeout=timeout, handle_sigterm=False)
             try:
                 yield
             finally:

@@ -20,7 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-"""Multi-process worker pool implementation
+"""Multi-process worker pool
 
 Processes in the worq.pool.process stack:
     Producer - produces tasks to be executed
@@ -58,47 +58,54 @@ class WorkerPool(object):
     """Multi-process worker pool
 
     :param broker: Broker object.
-    :param workers: Number of workers to maintain in the pool.
-    :param get_task_timeout: Number of seconds to block while waiting for a new
-        task to arrive on the queue. The default is 10 seconds. This timeout
-        value affects pool stop time: a larger value means shutdown may take
-        longer because it may need to wait longer for the consumer thread to
-        complete.
+    :param init_func: Worker initializer. This is called to initialize
+        each worker on startup. It can be used to setup logging or do
+        any other global initialization. The first argument will be a
+        broker url, and the remaining will be ``*init_args,
+        **init_kwargs``. It must return a broker instance, and it must
+        be pickleable.
+    :param init_args: Additional arguments to pass to init_func.
+    :param init_kwargs: Additional keyword arguments to pass to init_func.
+    :param workers: Number of workers to maintain in the pool. The default
+        value is the number returned by ``multiprocessing.cpu_count``.
     :param max_worker_tasks: Maximum number of tasks to execute on each worker
         before retiring the worker and spawning a new one in its place.
     """
 
     def __init__(self, broker,
+            init_func,
+            init_args=(),
+            init_kwargs=None,
             workers=None,
-            get_task_timeout=10,
             max_worker_tasks=None,
         ):
         self.broker = broker
+        self.init_func = init_func
+        self.init_args = (broker.url,) + init_args
+        self.init_kwargs = {} if init_kwargs is None else init_kwargs
         if workers is None:
             try:
                 workers = cpu_count()
             except NotImplementedError:
                 workers = 1
         self.workers = workers
-        self.get_task_timeout = get_task_timeout
         self.max_worker_tasks = max_worker_tasks
         self._workers = []
         self._worker_queue = ThreadQueue()
         self._running = False
 
-    def start(self, init_func, init_args=(), init_kwargs={}, handle_sigterm=1):
+    def start(self, timeout=10, handle_sigterm=True):
         """Start the worker pool
 
-        :param init_func: Worker initializer. This is called to initialize each
-            worker on startup. It can be used to setup logging or do any other
-            global initialization. The first argument will be a broker instance,
-            and the remaining will be `*init_args, **init_kwargs`.
-        :param init_args: Additional arguments to pass to init_func.
-        :param init_kwargs: Additional keyword arguments to pass to init_func.
-        :param handle_sigterm: If True (the default) setup a signal handler
-            and block until the process is signalled. This should only be
-            called in the main thread in that case. If False, start workers and
-            a pool manager thread and return.
+        :param timeout: Number of seconds to block while waiting for a
+            new task to arrive on the queue. The default is 10 seconds.
+            This timeout value affects pool stop time: a larger value
+            means shutdown may take longer because it may need to wait
+            longer for the consumer thread to complete.
+        :param handle_sigterm: If true (the default) setup a signal
+            handler and block until the process is signalled. This
+            should only be called in the main thread in that case. If
+            false, start workers and a pool manager thread and return.
         """
         if self._running:
             raise Error('cannot start already running WorkerPool')
@@ -106,27 +113,31 @@ class WorkerPool(object):
         log.info('starting worker pool...')
 
         for n in range(self.workers):
-            worker = WorkerProxy(self.broker,
-                init_func, init_args, init_kwargs, self.max_worker_tasks)
+            worker = WorkerProxy(
+                self.broker,
+                self.init_func,
+                self.init_args,
+                self.init_kwargs,
+                self.max_worker_tasks
+            )
             self._workers.append(worker)
             self._worker_queue.put(worker)
 
-        self._consumer_thread = Thread(target=self._consume_tasks)
+        args = (timeout,)
+        self._consumer_thread = Thread(target=self._consume_tasks, args=args)
         self._consumer_thread.start()
 
         if handle_sigterm:
             setup_exit_handler()
             try:
-                # HACK how else to sleep indefinitely? The main thread receives
-                # signals, which should not interrupt anything critical, so its
-                # sole purpose is to be the signal handler.
+                # Sleep indefinitely waiting for a signal
+                # to initiate pool shutdown.
                 while True:
                     time.sleep(DAY)
             finally:
                 self.stop()
 
-    def _consume_tasks(self):
-        timeout = self.get_task_timeout
+    def _consume_tasks(self, timeout):
         get_task = self.broker.next_task
         get_worker = self._worker_queue.get
         put_worker = self._worker_queue.put
@@ -186,7 +197,6 @@ class WorkerProxy(object):
         self.thread.join()
 
     def _proxy_loop(self, broker, *args):
-        args = (broker.url,) + args
         is_debug = partial(log.isEnabledFor, logging.DEBUG)
         pid = os.getpid()
         proc = None
@@ -247,9 +257,9 @@ class WorkerProxy(object):
         return 'WorkerProxy-%s' % self.pid
 
 
-def worker_process(parent_pid, reduced_cn, url,
+def worker_process(parent_pid, reduced_cn,
         init, init_args, init_kw, max_worker_tasks):
-    broker = init(url, *init_args, **init_kw)
+    broker = init(*init_args, **init_kw)
     log.info('Worker-%s started', os.getpid())
     task_count = 1
     parent = reduced_cn[0](*reduced_cn[1]) # HACK un-reduce connection
