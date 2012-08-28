@@ -87,11 +87,14 @@ class MemoryQueue(AbstractMessageQueue):
         return None if result_obj is None else result_obj.__status
 
     def set_result(self, task_id, message, timeout):
-        result_obj = self.results_by_task[task_id]
-        result_obj.__result.put(message)
+        result_obj = self.results_by_task.get(task_id)
+        if result_obj is not None:
+            result_obj.__result.put(message)
 
     def pop_result(self, task_id, timeout):
-        result_obj = self.results_by_task[task_id]
+        result_obj = self.results_by_task.get(task_id)
+        if result_obj is None:
+            return const.TASK_EXPIRED
         try:
             if timeout == 0:
                 result = result_obj.__result.get_nowait()
@@ -101,11 +104,10 @@ class MemoryQueue(AbstractMessageQueue):
             result = None
         return result
 
-# untested
-#    def discard_result(self, task_id, task_expired_token):
-#        result_obj = self.results_by_task.pop(task_id)
-#        if result_obj is not None:
-#            result_obj.__result.put(task_expired_token)
+    def discard_result(self, task_id, task_expired_token):
+        result_obj = self.results_by_task.pop(task_id)
+        if result_obj is not None:
+            result_obj.__result.put(task_expired_token)
 
     def init_taskset(self, taskset_id, result):
         if result is not None:

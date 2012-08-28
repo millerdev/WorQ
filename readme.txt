@@ -25,9 +25,10 @@ SOFTWARE.
 TODO
 
 - TaskSet should store final task with its results
-- Call taskset with no args uses identity task that simply returns it's first arg
+- Call taskset with no args uses default task that simply returns it's first arg
 - DeferredResult.wait should continue waiting if its value is a DeferredResult
     - DeferredResult should be picklable
+- Allow tasks to be cancelled
 - Implement "map" and "reduce"
 - Decouple TaskSpace from Broker?
 - ?Add dependent task to a DeferredResult (value of deferred is passed to dependent)
