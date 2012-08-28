@@ -140,9 +140,8 @@ class FunctionTask(object):
 
     def invoke(self, broker):
         queue = broker.name
-        options = self.options
         log.debug('invoke %s [%s:%s]', self.name, queue, self.id)
-        result_status = options.get('result_status', False)
+        result_status = self.options.get('result_status', False)
         if result_status:
             broker.set_status(self, PROCESSING)
             def update_status(value):
@@ -168,28 +167,7 @@ class FunctionTask(object):
                 '%s: %s' % (type(err).__name__, err))
             raise
         finally:
-            if 'taskset' in options:
-                self.process_taskset(broker, options['taskset'], result)
-            elif result_status or 'result_timeout' in options:
-                broker.set_result(self, result)
-
-    def process_taskset(self, broker, taskset, result):
-        options = taskset.options
-        if (options.get('on_error', TaskSet.FAIL) == TaskSet.FAIL
-                and isinstance(result, TaskFailure)):
-            # suboptimal: pending tasks in the set will continue to be executed
-            # and their results will be persisted if they succeed.
-            fail = TaskFailure(
-                taskset.name, broker.name, taskset.id, 'subtask(s) failed')
-            broker.set_result(taskset, fail)
-        else:
-            timeout = taskset.result_timeout
-            results = broker.messages.update_taskset(
-                taskset.id, options['size'], broker.serialize(result), timeout)
-            if results is not None:
-                loads = broker.deserialize
-                taskset.args = ([loads(r) for r in results],) + taskset.args
-                broker.enqueue(taskset)
+            broker.set_result(self, result)
 
 
 class DeferredResult(object):
@@ -198,12 +176,18 @@ class DeferredResult(object):
     Not thread-safe.
     """
 
-    def __init__(self, broker, task_id, task_name, heartrate):
+    def __init__(self, broker, task):
         self.broker = broker
-        self.id = task_id
-        self.name = task_name
-        self.heartrate = heartrate * 2
+        self.task = task
         self._status = None
+
+    @property
+    def id(self):
+        return self.task.id
+
+    @property
+    def name(self):
+        return self.task.name
 
     @property
     def value(self):
@@ -292,13 +276,13 @@ class TaskSet(object):
         46
 
     TaskSet algorithm:
-    - Head tasks (added with .add) are enqueued to be executed in parallel
-      when the TaskSet is called with the final task.
-    - Upon completion of each head task the results are checked to determine
-      if all head tasks have completed. If so, pop the results from the
-      persistent store and enqueue the final task (passed to .__call__).
-      Otherwise set a timeout on the results so they are not persisted forever
-      if the taskset fails to complete for whatever reason.
+    - Head tasks (added with .add) are enqueued to be executed in
+      parallel when the TaskSet is called with the final task.
+    - Upon completion of each head task the results are checked to
+      determine if all head tasks have completed. If so, pop the results
+      from the persistent store and enqueue the final task. Otherwise
+      set a timeout on the results so they are not persisted forever if
+      the taskset fails to complete for whatever reason.
     """
 
     PASS = 'pass'
@@ -307,6 +291,8 @@ class TaskSet(object):
     def __init__(self, **options):
         self.queue = None
         self.tasks = []
+        if 'on_error' in options:
+            options['taskset_on_error'] = options.pop('on_error')
         self.options = options
 
     def add(*self_task_args, **kw):
@@ -350,17 +336,17 @@ class TaskSet(object):
         TaskSet.add(*self_task_args, **kw)
         self = self_task_args[0]
         task, args, kw = self.tasks.pop()
-        opts = dict(self.options, size=len(self.tasks))
+        opts = dict(self.options)
+        opts.pop('taskset_on_error', None)
         taskset = FunctionTask(task.name, args, kw, opts)
         result = task.broker.init_taskset(taskset)
-        result.__subsets = []
-        options = {'taskset': taskset}
+        options = dict(self.options,
+            taskset_id=taskset.id,
+            taskset_name=taskset.name,
+            taskset_size=len(self.tasks),
+        )
         for t, a, k in self.tasks:
-            r = t.with_options(options)(*a, **k)
-            # HACK should not set result attributes here. this needs to be formalized
-            if isinstance(t, TaskSet) and result is not None:
-                assert r is not None
-                result.__subsets.append(r)
+            t.with_options(options)(*a, **k)
         return result
 
 

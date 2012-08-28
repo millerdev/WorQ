@@ -24,7 +24,11 @@ SOFTWARE.
 
 TODO
 
-- TaskSet should store final task with its results
+- TaskSet should be resilient to lost intermediate results
+- What happens to TaskSet results when a subtask is not invoked before the
+    result set expires (e.g., when the broker is busy)? This should not happen.
+    IOW, TaskSet results should not expire when there are subtasks in the queue
+    waiting to be invoked.
 - Call taskset with no args uses default task that simply returns it's first arg
 - DeferredResult.wait should continue waiting if its value is a DeferredResult
     - DeferredResult should be picklable
@@ -35,8 +39,10 @@ TODO
 - Reload worker pool config on HUP
 - Skip tests if queue backend is not running
 
+
 Completed tasks
 
+x - TaskSet should store final task with its results
 x - Implement thread pool
 x - Come up with a name for the worker pool coordinator process. "Pool manager"
 x - Guaranteed message delivery in redis

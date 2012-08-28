@@ -109,12 +109,18 @@ class MemoryQueue(AbstractMessageQueue):
         if result_obj is not None:
             result_obj.__result.put(task_expired_token)
 
-    def init_taskset(self, taskset_id, result):
+    def init_taskset(self, taskset_id, task_message, result):
         if result is not None:
             self.results_by_task[taskset_id] = result
             result.__result = Queue() # final result queue
+            result.__task = task_message
+            result.__subsets = [] # child taskset result references
             result.__results = [] # taskset results
             result.__lock = Lock()
+            if 'taskset_id' in result.task.options:
+                # bind to parent taskset to prevent result loss due to GC
+                parent_id = result.task.options['taskset_id']
+                self.results_by_task[parent_id].__subsets.append(result)
 
     def update_taskset(self, taskset_id, num, message, timeout):
         result_obj = self.results_by_task.get(taskset_id)
@@ -123,4 +129,4 @@ class MemoryQueue(AbstractMessageQueue):
                 value = result_obj.__results
                 value.append(message)
                 if len(value) == num:
-                    return value
+                    return result_obj.__task, value

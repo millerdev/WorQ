@@ -38,9 +38,10 @@ class Broker(object):
         'result_status',
         'result_timeout',
         'heartrate',
-        'taskset',
-        'on_error',
-        'size',
+        'taskset_id',
+        'taskset_name',
+        'taskset_size',
+        'taskset_on_error',
     ])
 
     def __init__(self, message_queue):
@@ -85,7 +86,7 @@ class Broker(object):
         log.debug('enqueue %s [%s:%s]', task.name, self.name, task.id)
         message = self.serialize(task)
         if options.get('result_status', False) or 'result_timeout' in options:
-            result = DeferredResult(self, task.id, task.name, task.heartrate)
+            result = DeferredResult(self, task)
         else:
             result = None
         self.messages.enqueue_task(task.id, message, result)
@@ -132,7 +133,11 @@ class Broker(object):
 
     def heartbeat(self, task):
         """Extend task result timeout"""
-        self.messages.set_task_timeout(task.id, task.heartrate * 2 + 5)
+        timeout = task.heartrate * 2 + 5
+        self.messages.set_task_timeout(task.id, timeout)
+        taskset_id = task.options.get('taskset_id')
+        if taskset_id is not None:
+            self.messages.set_task_timeout(taskset_id, timeout)
 
     def serialize(self, obj):
         return dumps(obj, HIGHEST_PROTOCOL)
@@ -146,8 +151,33 @@ class Broker(object):
         :param task: Task object for which to set the result.
         :param result: Result object.
         """
+        options = task.options
+        timeout = task.result_timeout
+        if 'taskset_id' in options:
+            taskset_id = options['taskset_id']
+            taskset_name = options['taskset_name']
+            if (options.get('taskset_on_error', TaskSet.FAIL) == TaskSet.FAIL
+                    and isinstance(result, TaskFailure)):
+                # suboptimal: pending tasks in the set will continue to be
+                # executed and their results will be persisted if they succeed.
+                fail = TaskFailure(
+                    taskset_name, self.name, taskset_id, 'subtask(s) failed')
+                self._set_result(taskset_id, fail, timeout)
+            else:
+                task_and_resluts = self.messages.update_taskset(taskset_id,
+                    options['taskset_size'], self.serialize(result), timeout)
+                if task_and_resluts is not None:
+                    loads = self.deserialize
+                    task, results = task_and_resluts
+                    task = loads(task)
+                    task.args = ([loads(r) for r in results],) + task.args
+                    self.enqueue(task)
+        elif 'result_timeout' in options or options.get('result_status'):
+            self._set_result(task.id, result, timeout)
+
+    def _set_result(self, task_id, result, timeout):
         message = self.serialize(result)
-        self.messages.set_result(task.id, message, task.result_timeout)
+        self.messages.set_result(task_id, message, timeout)
 
     def pop_result(self, task, timeout=0):
         """Pop and deserialize a task's result object
@@ -186,9 +216,9 @@ class Broker(object):
 
         :returns: A DeferredResult object.
         """
-        result = DeferredResult(
-            self, taskset.id, taskset.name, taskset.heartrate)
-        self.messages.init_taskset(taskset.id, result)
+        message = self.serialize(taskset)
+        result = DeferredResult(self, taskset)
+        self.messages.init_taskset(taskset.id, message, result)
         return result
 
 
@@ -294,10 +324,12 @@ class AbstractMessageQueue(object):
         """
         raise NotImplementedError('abstract method')
 
-    def init_taskset(self, taskset_id, result):
+    def init_taskset(self, taskset_id, task_message, result):
         """Initialize a taskset result storage
 
         :param taskset_id: (string) The taskset unique identifier.
+        :param task_message: (string) A serialized task message, the final
+            task in the taskset.
         :param result: A DeferredResult object for the task.
         """
         raise NotImplementedError('abstract method')
@@ -314,6 +346,8 @@ class AbstractMessageQueue(object):
             set of results.
         :param timeout: (int) Discard results after this number of seconds.
         :returns: None if the number of updates has not reached num_tasks.
-            Otherwise return an unordered list of serialized result messages.
+            Otherwise return a two-item sequence consisting of the final
+            task (serialized) and an unordered list of serialized result
+            messages.
         """
         raise NotImplementedError('abstract method')

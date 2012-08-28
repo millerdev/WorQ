@@ -100,6 +100,7 @@ class RedisQueue(AbstractMessageQueue):
         timeout = max(int(timeout), 1)
         with self.redis.pipeline() as pipe:
             pipe.expire(TASK_PATTERN % (self.name, task_id), timeout)
+            pipe.expire(TASKSET_PATTERN % (self.name, task_id), timeout) # ???
             pipe.execute()
 
     def set_status(self, task_id, message):
@@ -160,18 +161,23 @@ class RedisQueue(AbstractMessageQueue):
             pipe.expire(key, 5)
             pipe.execute()
 
-    def init_taskset(self, taskset_id, result):
+    def init_taskset(self, taskset_id, task_message, result):
         # TODO taskset result persistence should update heartbeat
         key = TASK_PATTERN % (self.name, taskset_id)
-        self.redis.hmset(key, {'status': const.PENDING})
+        self.redis.hmset(key, {
+            'status': const.PENDING,
+            'task': task_message,
+        })
 
     def update_taskset(self, taskset_id, num_tasks, message, timeout):
         key = TASKSET_PATTERN % (self.name, taskset_id)
         num = self.redis.rpush(key, message)
         if num == num_tasks:
+            task = TASK_PATTERN % (self.name, taskset_id)
             with self.redis.pipeline() as pipe:
+                pipe.hget(task, 'task')
                 pipe.lrange(key, 0, -1)
                 pipe.delete(key)
-                return pipe.execute()[0]
+                return pipe.execute()[:2]
         else:
             self.redis.expire(key, max(int(timeout), 1))
