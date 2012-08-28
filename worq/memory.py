@@ -62,8 +62,10 @@ class MemoryQueue(AbstractMessageQueue):
                 result.__result = Queue()
 
     def get(self, timeout=None):
-        # TODO handle Empty, return None
-        return self.queue.get(timeout=timeout)
+        try:
+            return self.queue.get(timeout=timeout)
+        except Empty:
+            return None
 
     def discard_pending(self):
         while True:

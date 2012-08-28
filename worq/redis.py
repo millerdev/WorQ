@@ -20,7 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-"""Redis queue broker."""
+"""Redis message queue and result store."""
 from __future__ import absolute_import
 import logging
 import redis

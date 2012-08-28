@@ -299,7 +299,7 @@ def _logging_init(url, _logpath, _init, *args, **kw):
     return _init(url, *args, **kw)
 
 def worker_pool(url, init_func, init_args, workers=1):
-    process_config(init_args[-1], 'Broker-%s' % os.getpid())
+    process_config(init_args[-1], 'Pool-%s' % os.getpid())
     broker = get_broker(url)
     with discard_tasks(broker):
         pool = WorkerPool(broker, workers=workers, get_task_timeout=1)

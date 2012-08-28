@@ -45,17 +45,19 @@ class Broker(object):
 
     def __init__(self, message_queue):
         self.messages = message_queue
-        self.tasks = {_stop_task.name: _stop_task}
+        self.tasks = {}
         self.name = message_queue.name
 
     @property
     def url(self):
         return self.messages.url
 
-    def expose(self, obj):
+    def expose(self, obj, replace=False):
         """Expose a TaskSpace or task callable.
 
         :param obj: A TaskSpace or task callable.
+        :param replace: Replace existing task if True. Otherwise (by default),
+            raise ValueError if this would replace an existing task.
         """
         if isinstance(obj, TaskSpace):
             space = obj
@@ -63,37 +65,9 @@ class Broker(object):
             space = TaskSpace()
             space.task(obj)
         for name, func in space.tasks.iteritems():
-            if name in self.tasks:
+            if name in self.tasks and not replace:
                 raise ValueError('task %r conflicts with existing task' % name)
             self.tasks[name] = func
-
-    def start_worker(self, max_wait=None):
-        """Start a single worker
-
-        TODO move to a utility class (this is a single-threaded worker pool).
-
-        :param max_wait: Maximum number of seconds to wait for a task before
-            stopping the worker. A value of None (the default) makes this a
-            blocking call.
-        """
-        try:
-            while True:
-                task = self.next_task(timeout=max_wait)
-                if task is None:
-                    break
-                task.invoke(self)
-        except _StopWorker:
-            log.info('worker stopped')
-
-    def stop(self):
-        """Stop a random worker.
-
-        WARNING this is only meant for testing purposes. It will likely not do
-        what you expect in an environment with more than one worker.
-        """
-        stop = FunctionTask(_stop_task.name, (), {}, {})
-        stop.id = 'stop'
-        self.enqueue(stop)
 
     def discard_pending_tasks(self):
         """Discard pending tasks from queue"""
@@ -145,11 +119,13 @@ class Broker(object):
             return message
         task_id, message = message
         try:
-            return self.deserialize(message)
+            task = self.deserialize(message)
         except Exception:
             log.error('cannot deserialize task [%s:%s]',
                 self.name, task_id, exc_info=True)
             return None
+        log.debug('got task: %s [%s:%s]', task.name, self.name, task_id)
+        return task
 
     def invoke(self, task):
         """Invoke the given task (normally only called by a worker)"""
@@ -342,10 +318,3 @@ class AbstractMessageQueue(object):
             Otherwise return an unordered list of serialized result messages.
         """
         raise NotImplementedError('abstract method')
-
-
-class _StopWorker(BaseException): pass
-
-def _stop_task():
-    raise _StopWorker()
-_stop_task.name = '<stop_task>'

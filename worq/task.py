@@ -148,7 +148,6 @@ class FunctionTask(object):
             def update_status(value):
                 broker.set_status(self, value)
             self.kw['update_status'] = update_status
-        from worq.core import _StopWorker # HACK remove this
         try:
             try:
                 task = broker.tasks[self.name]
@@ -157,9 +156,6 @@ class FunctionTask(object):
                 log.error(result)
             else:
                 result = task(*self.args, **self.kw)
-        except _StopWorker:
-            result = TaskFailure(self.name, queue, self.id, 'worker stopped')
-            raise
         except Exception, err:
             log.error('task failed: %s [%s:%s]',
                 self.name, queue, self.id, exc_info=True)

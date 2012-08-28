@@ -26,9 +26,9 @@ import logging
 import shutil
 from contextlib import contextmanager
 from tempfile import mkdtemp
-from threading import Thread, Lock
+from threading import Lock
 
-from worq.core import _StopWorker
+from worq.pool.thread import WorkerPool
 
 log = logging.getLogger(__name__)
 
@@ -53,38 +53,26 @@ def with_urls(test=None, exclude=None):
     return functools.partial(with_urls, exclude=exclude)
 
 @contextmanager
-def thread_worker(broker, lock=None, timeout=123):
-    if lock is None:
-        def run():
-            try:
-                broker.start_worker(timeout)
-            except:
-                log.error('worker crashed', exc_info=True)
-    else:
-        # acquire lock prior to invoking each task
-        def run():
-            try:
-                while True:
-                    task = broker.next_task(timeout=timeout)
-                    lock.acquire()
-                    broker.invoke(task)
-            except _StopWorker:
-                log.info('worker stopped')
-            except:
-                log.error('worker crashed', exc_info=True)
-    t = Thread(target=run)
-    t.start()
+def thread_worker(broker, lock=None, timeout=1):
+    if lock is not None:
+        real_invoke = broker.invoke
+        def invoke(task):
+            lock.acquire()
+            real_invoke(task)
+        broker.invoke = invoke
+    pool = WorkerPool(broker)
+    pool.start(timeout=timeout)
     try:
         yield
     finally:
-        broker.stop()
+        pool.stop(use_sentinel=True, join=False)
         try:
             if lock is not None:
                 lock.release()
         except Exception:
             log.error('lock release failed', exc_info=True)
         finally:
-            t.join()
+            pool.join()
             broker.discard_pending_tasks()
 
 class TimeoutLock(object):

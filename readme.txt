@@ -23,25 +23,30 @@ SOFTWARE.
 -------------------------------------------------------------------------------
 
 TODO
-- Include task name in repr of DeferredResult
 
-- Improve task serialization for fast option and task_id access (avoid unpickle of parameters, etc.)
-- Come up with a name for the worker pool coordinator process.
 - TaskSet should store final task with its results
 - Call taskset with no args uses identity task that simply returns it's first arg
 - DeferredResult.wait should continue waiting if its value is a DeferredResult
     - DeferredResult should be picklable
+- Implement "map" and "reduce"
+- Decouple TaskSpace from Broker?
 - ?Add dependent task to a DeferredResult (value of deferred is passed to dependent)
 - Reload worker pool config on HUP
-- Task monitoring (must be optional)
-    - update result heartbeat periodically
-    - use this for better TaskSet resilience
-- Guaranteed message delivery in redis
-    - result is created in redis on enqueue task
-    - task/result has a state machine: pending, in process, completed, lost...
-    - running task can update its status on its (in process) result object
 - Skip tests if queue backend is not running
 
+Completed tasks
+
+x - Implement thread pool
+x - Come up with a name for the worker pool coordinator process. "Pool manager"
+x - Guaranteed message delivery in redis
+x   - result is created in redis on enqueue task
+x   - task/result has a state machine: pending, in process, completed, lost...
+x   - running task can update its status on its (in process) result object
+x - Task monitoring (must be optional)
+x   - update result heartbeat periodically
+x   - use this for better TaskSet resilience
+xx - Improve task serialization for fast option and task_id access (avoid unpickle of parameters, etc.)
+x - Include task name in repr of DeferredResult
 x - Fix TODO items in worq.pool.process
 x   - Add support for heartbeat/keepalive
 x     Atomically set result timeout when task processing begins
@@ -54,7 +59,6 @@ x           EXPIRE result
 x           GET task details
 x           LREM task id from queue (process task if successful)
 x   - Improve status/heartbeat handling to not process old status values.
-
 x Pass TaskStatus objects through result queue (avoid extra status key)
 x MIT license
 x Move worq.procpool to worq.pool.process
