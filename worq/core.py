@@ -77,13 +77,12 @@ class Broker(object):
         return Queue(self, target)
 
     def enqueue(self, task):
-        queue = self.name # TODO remove this
         options = task.options
         unknown_options = set(options) - self.task_options
         if unknown_options:
             raise ValueError('unrecognized task options: %s'
                 % ', '.join(unknown_options))
-        log.debug('enqueue %s [%s:%s]', task.name, queue, task.id)
+        log.debug('enqueue %s [%s:%s]', task.name, self.name, task.id)
         message = self.serialize(task)
         if options.get('result_status', False) or 'result_timeout' in options:
             result = DeferredResult(self, task.id, task.name, task.heartrate)
@@ -124,7 +123,7 @@ class Broker(object):
             log.error('cannot deserialize task [%s:%s]',
                 self.name, task_id, exc_info=True)
             return None
-        log.debug('got task: %s [%s:%s]', task.name, self.name, task_id)
+        log.debug('next task: %s [%s:%s]', task.name, self.name, task_id)
         return task
 
     def invoke(self, task):
