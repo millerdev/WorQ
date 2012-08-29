@@ -27,7 +27,7 @@ from uuid import uuid4
 from weakref import ref as weakref
 
 from worq.const import DEFAULT, HOUR, MINUTE, DAY, STATUS_VALUES, TASK_EXPIRED
-from worq.task import (Queue, TaskSet, TaskSpace, FunctionTask, DeferredResult,
+from worq.task import (Queue, TaskSet, TaskSpace, FunctionTask, Deferred,
     TaskFailure, TaskExpired, worqspace)
 
 log = logging.getLogger(__name__)
@@ -87,7 +87,7 @@ class Broker(object):
         log.debug('enqueue %s [%s:%s]', task.name, self.name, task.id)
         message = self.serialize(task)
         if options.get('result_status', False) or 'result_timeout' in options:
-            result = DeferredResult(self, task)
+            result = Deferred(self, task)
         else:
             result = None
         self.messages.enqueue_task(task.id, message, result)
@@ -218,10 +218,10 @@ class Broker(object):
     def init_taskset(self, taskset):
         """Initialize taskset result storage
 
-        :returns: A DeferredResult object.
+        :returns: A Deferred object.
         """
         message = self.serialize(taskset)
-        result = DeferredResult(self, taskset)
+        result = Deferred(self, taskset)
         self.messages.init_taskset(taskset.id, message, result)
         return result
 
@@ -253,7 +253,7 @@ class AbstractMessageQueue(object):
 
         :param task_id: Task identifier.
         :param message: Serialized task message.
-        :param result: A DeferredResult object for the task. None if the task
+        :param result: A Deferred object for the task. None if the task
             options do not require result tracking.
         """
         raise NotImplementedError('abstract method')
@@ -339,7 +339,7 @@ class AbstractMessageQueue(object):
         :param taskset_id: (string) The taskset unique identifier.
         :param task_message: (string) A serialized task message, the final
             task in the taskset.
-        :param result: A DeferredResult object for the task.
+        :param result: A Deferred object for the task.
         """
         raise NotImplementedError('abstract method')
 

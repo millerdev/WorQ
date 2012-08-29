@@ -31,7 +31,7 @@ def test_empty_TaskSet_with_identity_task():
     res = tasks()
     assert res, repr(res)
     eq_(res.value, [])
-    eq_(repr(res), '<DeferredResult worq.task.identity [:] success>')
+    eq_(repr(res), '<Deferred worq.task.identity [:] success>')
 
 @with_urls
 def test_empty_TaskSet(url):
@@ -74,7 +74,7 @@ def test_TaskSet_on_error_FAIL(url):
             res.value
 
 @with_urls
-def test_DeferredResult_wait_with_status_update(url):
+def test_Deferred_wait_with_status_update(url):
 
     def func(arg, update_status=None):
         update_status('running')

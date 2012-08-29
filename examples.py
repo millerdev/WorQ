@@ -114,7 +114,7 @@ def wait_for_result(url):
 
         assert completed, repr(res)
         eq_(res.value, 'arg')
-        eq_(repr(res), "<DeferredResult func [default:%s] success>" % res.id)
+        eq_(repr(res), "<Deferred func [default:%s] success>" % res.id)
 
 
 @example
@@ -141,22 +141,22 @@ def result_status(url):
         res = func_task('arg')
 
         eventually((lambda:res.status), const.ENQUEUED)
-        eq_(repr(res), "<DeferredResult func [default:%s] enqueued>" % res.id)
+        eq_(repr(res), "<Deferred func [default:%s] enqueued>" % res.id)
 
         lock.release()
         eventually((lambda:res.status), const.PROCESSING)
-        eq_(repr(res), "<DeferredResult func [default:%s] processing>" % res.id)
+        eq_(repr(res), "<Deferred func [default:%s] processing>" % res.id)
 
         lock.release()
         eventually((lambda:res.status), [10])
-        eq_(repr(res), "<DeferredResult func [default:%s] [10]>" % res.id)
+        eq_(repr(res), "<Deferred func [default:%s] [10]>" % res.id)
 
         lock.release()
         completed = res.wait(WAIT)
 
         assert completed, repr(res)
         eq_(res.value, 'arg')
-        eq_(repr(res), "<DeferredResult func [default:%s] success>" % res.id)
+        eq_(repr(res), "<Deferred func [default:%s] success>" % res.id)
 
 
 @example
@@ -173,7 +173,7 @@ def no_such_task(url):
         completed = res.wait(WAIT)
 
         assert completed, repr(res)
-        eq_(repr(res), '<DeferredResult func [default:%s] failed>' % res.id)
+        eq_(repr(res), '<Deferred func [default:%s] failed>' % res.id)
         with assert_raises(TaskFailure,
                 'func [default:%s] no such task' % res.id):
             res.value
@@ -196,7 +196,7 @@ def worker_interrupted(url):
         completed = res.wait(WAIT)
 
         assert completed, repr(res)
-        eq_(repr(res), '<DeferredResult func [default:%s] failed>' % res.id)
+        eq_(repr(res), '<Deferred func [default:%s] failed>' % res.id)
         with assert_raises(TaskFailure,
                 'func [default:%s] KeyboardInterrupt: ' % res.id):
             res.value
@@ -219,7 +219,7 @@ def task_error(url):
         completed = res.wait(WAIT)
 
         assert completed, repr(res)
-        eq_(repr(res), '<DeferredResult func [default:%s] failed>' % res.id)
+        eq_(repr(res), '<Deferred func [default:%s] failed>' % res.id)
         with assert_raises(TaskFailure,
                 'func [default:%s] Exception: fail!' % res.id):
             res.value

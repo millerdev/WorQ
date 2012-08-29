@@ -169,7 +169,7 @@ class FunctionTask(object):
             broker.set_result(self, result)
 
 
-class DeferredResult(object):
+class Deferred(object):
     """Deferred result object
 
     Not thread-safe.
@@ -200,7 +200,7 @@ class DeferredResult(object):
         try:
             value = self._value
         except AttributeError:
-            raise AttributeError('DeferredResult value not available')
+            raise AttributeError('Deferred value not available')
         if isinstance(value, TaskFailure):
             raise value
         return value
@@ -248,7 +248,7 @@ class DeferredResult(object):
         if status is None:
             status = 'incomplete'
         args = (self.name, self.broker.name, self.id, status)
-        return '<DeferredResult %s [%s:%s] %s>' % args
+        return '<Deferred %s [%s:%s] %s>' % args
 
 
 class TaskSet(object):
@@ -334,7 +334,7 @@ class TaskSet(object):
             of results from all other tasks in the set as its first argument.
         :params *args: Extra positional arguments to use when invoking the task.
         :params **kw: Keyword arguments to use when invoking the task.
-        :returns: DeferredResult if the TaskSet was created with a
+        :returns: Deferred if the TaskSet was created with a
             `result_timeout`. Otherwise, None.
         """
         self = self_task_args[0]
@@ -346,7 +346,7 @@ class TaskSet(object):
             task = Queue(broker, __name__).identity
             if not self.tasks:
                 task = type('NullTask', (object,), dict(name=str(task), id=''))
-                result = DeferredResult(broker, task)
+                result = Deferred(broker, task)
                 result._value = []
                 return result
             self_task_args = (self, task)

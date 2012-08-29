@@ -24,23 +24,29 @@ SOFTWARE.
 
 TODO
 
+- Should be able to associate a task with one or more deferred results.
+    r0 = task()
+    r1 = task()
+    res = task([r0, r1]) # task is enqueued until r0 and r1 have completed
+    res.wait()
+- Deferred.wait should continue waiting if its value is a Deferred
+    - Deferred should be picklable
 - TaskSet should be resilient to lost intermediate results
 - What happens to TaskSet results when a subtask is not invoked before the
     result set expires (e.g., when the broker is busy)? This should not happen.
     IOW, TaskSet results should not expire when there are subtasks in the queue
     waiting to be invoked.
-- DeferredResult.wait should continue waiting if its value is a DeferredResult
-    - DeferredResult should be picklable
 - Allow tasks to be cancelled
 - Implement "map" and "reduce"
 - Decouple TaskSpace from Broker?
-- ?Add dependent task to a DeferredResult (value of deferred is passed to dependent)
+- ?Add dependent task to a Deferred (value of deferred is passed to dependent)
 - Reload worker pool config on HUP
 - Skip tests if queue backend is not running
 
 
 Completed
 
+x - Rename DeferredResult to Deferred.
 x - Call taskset with no args uses default task that simply returns it's first arg
 x - Ignore None in taskset results
 x - TaskSet should store final task with its results
