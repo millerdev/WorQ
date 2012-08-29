@@ -122,9 +122,9 @@ def result_status(url):
     # NOTE a lock is used to control state interactions between the producer
     # and the worker for illustration purposes only. This type of lock-step
     # interaction is not normally needed or even desired.
-    lock = TimeoutLock()
+    lock = TimeoutLock(locked=True)
 
-    def func(arg, update_status=None):
+    def func(arg, update_status):
         lock.acquire()
         update_status([10])
         lock.acquire()

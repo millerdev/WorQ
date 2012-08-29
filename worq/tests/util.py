@@ -55,11 +55,12 @@ def with_urls(test=None, exclude=None):
 @contextmanager
 def thread_worker(broker, lock=None, timeout=1):
     if lock is not None:
-        real_invoke = broker.invoke
-        def invoke(task):
+        real_next_task = broker.next_task
+        def next_task(*args, **kw):
+            log.debug('acquiring lock before getting next task')
             lock.acquire()
-            real_invoke(task)
-        broker.invoke = invoke
+            return real_next_task(*args, **kw)
+        broker.next_task = next_task
     pool = WorkerPool(broker)
     pool.start(timeout=timeout)
     try:
@@ -77,7 +78,7 @@ def thread_worker(broker, lock=None, timeout=1):
 
 class TimeoutLock(object):
     """A lock with acquisition timeout; initially locked by default."""
-    def __init__(self, locked=True):
+    def __init__(self, locked=False):
         self.lock = Lock()
         if locked:
             self.lock.acquire()
@@ -90,14 +91,14 @@ class TimeoutLock(object):
     def release(self):
         self.lock.release()
 
-def eventually(get_value, value, timeout=DEFAULT_TIMEOUT, poll_interval=0):
+def eventually(get_value, expect, timeout=DEFAULT_TIMEOUT, poll_interval=0):
     end = time.time() + timeout
     while time.time() < end:
-        result = get_value()
-        if result == value:
+        actual = get_value()
+        if actual == expect:
             return
         time.sleep(poll_interval)
-    raise AssertionError('eventually timeout: %r != %r' % (result, value))
+    raise AssertionError('eventually timeout: %r != %r' % (actual, expect))
 
 @contextmanager
 def tempdir(*args, **kw):

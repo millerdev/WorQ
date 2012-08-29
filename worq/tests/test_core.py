@@ -29,10 +29,10 @@ WAIT = 60 # default wait time (1 minute)
 
 
 @with_urls
-def test_task_expired(url):
+def test_Broker_task_failed(url):
+    lock = TimeoutLock(locked=True)
     def func():
         lock.acquire()
-    lock = TimeoutLock()
     broker = get_broker(url)
     broker.expose(func)
     with thread_worker(broker):

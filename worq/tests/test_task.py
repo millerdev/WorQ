@@ -26,12 +26,12 @@ from worq.tests.util import (assert_raises, eq_, eventually, thread_worker,
 
 WAIT = 60 # default wait time (1 minute)
 
-def test_empty_TaskSet_without_final_task():
+def test_empty_TaskSet_with_identity_task():
     tasks = TaskSet()
     res = tasks()
     assert res, repr(res)
     eq_(res.value, [])
-    eq_(repr(res), '<DeferredResult worq.task.return_arg [:] success>')
+    eq_(repr(res), '<DeferredResult worq.task.identity [:] success>')
 
 @with_urls
 def test_empty_TaskSet(url):

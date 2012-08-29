@@ -248,6 +248,9 @@ class AbstractMessageQueue(object):
     def enqueue_task(self, task_id, message, result):
         """Enqueue task
 
+        If a result is being maintained for the task (the given result
+        is not None), its status will be set to ``worq.const.ENQUEUED``.
+
         :param task_id: Task identifier.
         :param message: Serialized task message.
         :param result: A DeferredResult object for the task. None if the task
@@ -259,14 +262,16 @@ class AbstractMessageQueue(object):
         """Atomically get a serialized task message from the queue
 
         Task processing has started when this method returns, which
-        means that the task heartbeat must be maintained if there
-        could be someone waiting on the result.
+        means that the task heartbeat must be maintained if there could
+        be someone waiting on the result. The result status is set to
+        ``worq.const.PROCESSING`` if a result is being maintained for
+        the task.
 
         :param timeout: Number of seconds to wait before returning None if no
             task is available in the queue. Wait forever if timeout is None
             (the default value).
-        :returns: A serialized two-tuple (<task_id>, <message>) or None if
-            timeout was reached before a task arrived.
+        :returns: A two-tuple (<task_id>, <serialized task message>) or None
+            if timeout was reached before a task arrived.
         """
         raise NotImplementedError('abstract method')
 

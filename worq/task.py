@@ -24,7 +24,7 @@ import logging
 import time
 from uuid import uuid4
 
-from worq.const import DAY, DEFAULT, PROCESSING
+from worq.const import DAY, DEFAULT
 
 log = logging.getLogger(__name__)
 
@@ -143,7 +143,6 @@ class FunctionTask(object):
         log.debug('invoke %s [%s:%s]', self.name, queue, self.id)
         result_status = self.options.get('result_status', False)
         if result_status:
-            broker.set_status(self, PROCESSING)
             def update_status(value):
                 broker.set_status(self, value)
             self.kw['update_status'] = update_status
@@ -209,7 +208,13 @@ class DeferredResult(object):
     @property
     def status(self):
         """Get task status"""
-        self._status = self.broker.status(self)
+        if self:
+            if isinstance(self._value, TaskFailure):
+                self._status = 'failed'
+            else:
+                self._status = 'success'
+        elif self.task.options.get('result_status', False):
+            self._status = self.broker.status(self)
         return self._status
 
     def wait(self, timeout):
@@ -239,14 +244,8 @@ class DeferredResult(object):
         return self.wait(0)
 
     def __repr__(self):
-        if self:
-            if isinstance(self._value, TaskFailure):
-                status = 'failed'
-            else:
-                status = 'success'
-        elif self._status is not None:
-            status = self._status
-        else:
+        status = self.status
+        if status is None:
             status = 'incomplete'
         args = (self.name, self.broker.name, self.id, status)
         return '<DeferredResult %s [%s:%s] %s>' % args
