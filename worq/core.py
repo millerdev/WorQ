@@ -28,7 +28,7 @@ from weakref import ref as weakref
 
 from worq.const import DEFAULT, HOUR, MINUTE, DAY, STATUS_VALUES, TASK_EXPIRED
 from worq.task import (Queue, TaskSet, TaskSpace, FunctionTask, DeferredResult,
-    TaskFailure, TaskExpired)
+    TaskFailure, TaskExpired, worqspace)
 
 log = logging.getLogger(__name__)
 
@@ -48,6 +48,7 @@ class Broker(object):
         self.messages = message_queue
         self.tasks = {}
         self.name = message_queue.name
+        self.expose(worqspace)
 
     @property
     def url(self):
@@ -168,9 +169,12 @@ class Broker(object):
                     options['taskset_size'], self.serialize(result), timeout)
                 if task_and_resluts is not None:
                     loads = self.deserialize
+                    def not_none(results):
+                        values = (loads(r) for r in results)
+                        return [v for v in values if v is not None]
                     task, results = task_and_resluts
                     task = loads(task)
-                    task.args = ([loads(r) for r in results],) + task.args
+                    task.args = (not_none(results),) + task.args
                     self.enqueue(task)
         elif 'result_timeout' in options or options.get('result_status'):
             self._set_result(task.id, result, timeout)

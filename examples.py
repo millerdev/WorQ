@@ -280,6 +280,32 @@ def taskset_composition(url):
 
 
 @example
+def tasksets_ignore_nulls(url):
+
+    def func(arg):
+        return arg
+
+    broker = get_broker(url)
+    broker.expose(func)
+    with thread_worker(broker):
+
+        # -- task-invoking code, usually another process --
+        q = queue(url)
+
+        tasks = TaskSet(result_timeout=WAIT)
+        tasks.add(q.func, 1)
+        tasks.add(q.func, None)
+        tasks.add(q.func, 3)
+        tasks.add(q.func, None)
+        tasks.add(q.func, 5)
+
+        res = tasks() # call taskset without args returns all results
+
+        assert res.wait(WAIT), repr(res)
+        eq_(res.value, [1, 3, 5])
+
+
+@example
 def taskset_with_failed_subtasks(url):
     """TaskSet with TaskFailures passed to the final task
 

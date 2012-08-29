@@ -255,6 +255,11 @@ class DeferredResult(object):
 class TaskSet(object):
     """Execute a set of tasks in parallel, process results in a final task.
 
+    The first argument passed to the final task is a list of all non-
+    null results returned by tasks in the TaskSet. A pass-through task
+    that returns its first argument is used if no task is supplied when
+    invoking the TaskSet.
+
     :param result_timeout: Number of seconds to persist the final result. This
         timeout value is also used to retain intermediate task results. It
         should be longer than the longest-running task in the set. The default
@@ -333,11 +338,25 @@ class TaskSet(object):
         :returns: DeferredResult if the TaskSet was created with a
             `result_timeout`. Otherwise, None.
         """
-        TaskSet.add(*self_task_args, **kw)
         self = self_task_args[0]
+        if len(self_task_args) == 1 and not kw:
+            if self.tasks:
+                broker = self.queue._Queue__broker
+            else:
+                broker = type('NullBroker', (object,), {'name': ''})
+            task = Queue(broker, __name__).identity
+            if not self.tasks:
+                task = type('NullTask', (object,), dict(name=str(task), id=''))
+                result = DeferredResult(broker, task)
+                result._value = []
+                return result
+            self_task_args = (self, task)
+        TaskSet.add(*self_task_args, **kw)
         task, args, kw = self.tasks.pop()
         opts = dict(self.options)
         opts.pop('taskset_on_error', None)
+        if not self.tasks:
+            return task.with_options(opts)([], *args, **kw)
         taskset = FunctionTask(task.name, args, kw, opts)
         result = task.broker.init_taskset(taskset)
         options = dict(self.options,
@@ -427,3 +446,12 @@ class TaskStatus(object):
 
     def __init__(self, value):
         self.value = value
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# Internal tasks
+
+worqspace = TaskSpace(__name__)
+
+@worqspace.task
+def identity(arg):
+    return arg

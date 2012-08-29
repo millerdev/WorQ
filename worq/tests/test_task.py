@@ -26,6 +26,27 @@ from worq.tests.util import (assert_raises, eq_, eventually, thread_worker,
 
 WAIT = 60 # default wait time (1 minute)
 
+def test_empty_TaskSet_without_final_task():
+    tasks = TaskSet()
+    res = tasks()
+    assert res, repr(res)
+    eq_(res.value, [])
+    eq_(repr(res), '<DeferredResult worq.task.return_arg [:] success>')
+
+@with_urls
+def test_empty_TaskSet(url):
+    broker = get_broker(url)
+    broker.expose(len)
+    with thread_worker(broker):
+
+        q = queue(url)
+
+        tasks = TaskSet(result_timeout=60)
+        res = tasks(q.len)
+        assert res.wait(WAIT), repr(res)
+        eq_(res.value, 0)
+        assert ' len ' in repr(res), repr(res)
+
 @with_urls
 def test_TaskSet_on_error_FAIL(url):
 

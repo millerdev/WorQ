@@ -29,7 +29,6 @@ TODO
     result set expires (e.g., when the broker is busy)? This should not happen.
     IOW, TaskSet results should not expire when there are subtasks in the queue
     waiting to be invoked.
-- Call taskset with no args uses default task that simply returns it's first arg
 - DeferredResult.wait should continue waiting if its value is a DeferredResult
     - DeferredResult should be picklable
 - Allow tasks to be cancelled
@@ -40,8 +39,10 @@ TODO
 - Skip tests if queue backend is not running
 
 
-Completed tasks
+Completed
 
+x - Call taskset with no args uses default task that simply returns it's first arg
+x - Ignore None in taskset results
 x - TaskSet should store final task with its results
 x - Implement thread pool
 x - Come up with a name for the worker pool coordinator process. "Pool manager"
