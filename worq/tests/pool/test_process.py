@@ -99,11 +99,9 @@ def test_WorkerPool_max_worker_tasks(url):
 
         q = get_queue(url)
 
-        t = TaskSet(result_timeout=WAIT)
-        for n in range(4):
-            t.add(q.func)
+        t = [q.func() for n in range(4)]
 
-        res = t(q.results)
+        res = q.results(t)
         assert res.wait(WAIT), repr(res)
 
         results = res.value
@@ -164,13 +162,13 @@ def test_WorkerPool_crashed_worker(url):
 
         q = get_queue(url)
 
-        res = Task(q.getpid, result_timeout=WAIT)()
+        res = q.getpid()
         assert res.wait(WAIT), repr(res)
         pid = res.value
 
         q.kill_worker()
 
-        res = Task(q.getpid, result_timeout=WAIT)()
+        res = q.getpid()
         assert res.wait(WAIT), repr(res)
         assert res.value != pid, pid
 
@@ -198,7 +196,7 @@ def test_WorkerPool_worker_shutdown_on_parent_die(url):
 
         with printlog(logpath), force_kill_on_exit(proc):
 
-            res = Task(get_queue(url).getpid, result_timeout=WAIT)()
+            res = get_queue(url).getpid()
             assert res.wait(WAIT), repr(res)
 
             os.kill(proc.pid, signal.SIGKILL) # force kill pool master

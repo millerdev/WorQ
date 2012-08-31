@@ -38,7 +38,7 @@ def test_Broker_task_failed(url):
     with thread_worker(broker):
         q = get_queue(url)
 
-        res = Task(q.func, result_timeout=WAIT)()
+        res = q.func()
         broker.task_failed(res)
         assert res.wait(timeout=WAIT), repr(res)
         lock.release()

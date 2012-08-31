@@ -107,8 +107,7 @@ def wait_for_result(url):
         # -- task-invoking code, usually another process --
         q = get_queue(url)
 
-        func_task = Task(q.func, result_timeout=WAIT)
-        res = func_task('arg')
+        res = q.func('arg')
 
         completed = res.wait(WAIT)
 
@@ -168,7 +167,7 @@ def no_such_task(url):
         # -- task-invoking code, usually another process --
         q = get_queue(url)
 
-        res = Task(q.func, result_timeout=WAIT)('arg')
+        res = q.func('arg')
 
         completed = res.wait(WAIT)
 
@@ -192,7 +191,7 @@ def worker_interrupted(url):
         # -- task-invoking code, usually another process --
         q = get_queue(url)
 
-        res = Task(q.func, result_timeout=WAIT)('arg')
+        res = q.func('arg')
         completed = res.wait(WAIT)
 
         assert completed, repr(res)
@@ -215,7 +214,7 @@ def task_error(url):
         # -- task-invoking code, usually another process --
         q = get_queue(url)
 
-        res = Task(q.func, result_timeout=WAIT)('arg')
+        res = q.func('arg')
         completed = res.wait(WAIT)
 
         assert completed, repr(res)
