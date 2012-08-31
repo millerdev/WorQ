@@ -24,56 +24,14 @@ SOFTWARE.
 
 TODO
 
-- Should be able to associate a task with one or more deferred arguments.
-    example:
-        r0 = q.task()
-        r1 = q.task()
-        res = q.task([r0, r1]) # defer execution until r0 and r1 have completed
-        res.wait()
-    limitations:
-        - deferreds are not thread-safe
-        - should not attempt to retrieve deferred argument values
-          prior to enqueueing the dependent task
-    algorithm:
-        enqueue task with deferred arguments (deferred task)
-            setup deferred argument storage (with info to invoke deferred task)
-            for each deferred argument:
-                atomically
-                    set result promise task_id (if not already set)
-                    pop result promise
-                    pop result message
-                    return (promise, message)
-                if promise:
-                    # we now own the result
-                    if message is valid:
-                        transfer result to deferred argument storage
-                        if all arguments are present:
-                            enqueue deferred task
-                else:
-                    raise result already allocated error
-        worker set result
-            atomically
-                get result promise task_id
-                set result message
-            if promise task_id is valid:
-                transfer result to deferred argument storage
-                if all arguments are present:
-                    enqueue deferred task
-
-    algorithm: enqueue task with deferred arguments
-        tag each deferred argument with task_id
-        when deferred argument becomes available:
-            push it onto the argument stack of the task
-            if argument stack is full
-                enqueue task with arguments
-        create cleanup/heartbeat task, which will...
-            if task has been enqueued
-                return (stop heartbeats)
-            for each arg task that has been lost
-                push TaskFailure onto argument stack
-            if argument stack is full
-                enqueue task with arguments
-            else schedule next cleanup/heartbeat
+- Cascading timeout (to reserved ids)
+- Deferred.ignore_result
+- process.WorkerPool should work with MemoryQueue (pass results back to pool)
+- Improve performance of RedisQueue.get with a transaction
+    prevent race to remove task_id from queue by only having one broker do that
+- Do not allow duplicate keys in Queue
+- Rename (Redis|Memory)Queue to TaskQueue (like WorkerPool)
+- Remove status junk (simple to implement externally, adds cruft to task interfaces)
 - Deferred.wait should continue waiting if its value is a Deferred
     - Deferred should be picklable
 - Allow setting custom task id
@@ -93,6 +51,41 @@ TODO
 
 Completed
 
+x - Should be able to associate a task with one or more deferred arguments.
+x   example:
+x       r0 = q.task()
+x       r1 = q.task()
+x       res = q.task([r0, r1]) # defer execution until r0 and r1 have completed
+x       res.wait()
+x   limitations:
+x       - deferreds are not thread-safe
+x       - should not attempt to retrieve deferred argument values
+x         prior to enqueueing the dependent task
+x   algorithm:
+x       enqueue task with deferred arguments (deferred task)
+x           setup deferred argument storage (with info to invoke deferred task)
+x           for each deferred argument:
+x               atomically
+x                   set result promise task_id (if not already set)
+x                   pop result promise
+x                   pop result message
+x                   return (promise, message)
+x               if promise:
+x                   # we now own the result
+x                   if message is valid:
+x                       transfer result to deferred argument storage
+x                       if all arguments are present:
+x                           enqueue deferred task
+x               else:
+x                   raise result already allocated error
+x       worker set result
+x           atomically
+x               get result promise task_id
+x               set result message
+x           if promise task_id is valid:
+x               transfer result to deferred argument storage
+x               if all arguments are present:
+x                   enqueue deferred task
 x - Rename DeferredResult to Deferred.
 x - Call taskset with no args uses default task that simply returns it's first arg
 x - Ignore None in taskset results

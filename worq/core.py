@@ -369,7 +369,11 @@ class AbstractMessageQueue(object):
         raise NotImplementedError('abstract method')
 
     def set_task_timeout(self, task_id, timeout):
-        """Set a timeout on the task result"""
+        """Set a timeout on the task result
+
+        Recursively set the timeout on the given task and all deferred
+        tasks depending on this task's result.
+        """
         raise NotImplementedError('abstract method')
 
     def set_status(self, task_id, message):
