@@ -71,14 +71,13 @@ class Broker(object):
 
     def enqueue(self, task):
         message, args = self.serialize(task, deferred=True)
-        if task.ignore_result:
-            result = None
-        else:
-            result = Deferred(self, task)
+        result = Deferred(self, task)
         store = self.messages
         if args:
+            if not store.defer_task(result, message, args):
+                raise TaskFailure(task.name, self.name, task.id,
+                    'cannot enqueue task with duplicate id')
             log.debug('defer %s [%s:%s]', task.name, self.name, task.id)
-            store.defer_task(task.id, message, args, result)
             for arg_id in args:
                 ok, msg = store.reserve_argument(arg_id, task.id)
                 if not ok:
@@ -92,9 +91,11 @@ class Broker(object):
                             task.name, self.name, task.id)
                         self.messages.undefer_task(task.id)
         else:
+            if not store.enqueue_task(result, message):
+                raise TaskFailure(task.name, self.name, task.id,
+                    'cannot enqueue task with duplicate id')
             log.debug('enqueue %s [%s:%s]', task.name, self.name, task.id)
-            store.enqueue_task(task.id, message, result)
-        return result
+        return None if task.ignore_result else result
 
     def set_status(self, task, value):
         """Set the status of a task"""
@@ -269,28 +270,23 @@ class AbstractTaskQueue(object):
         self.url = url
         self.name = name
 
-    def enqueue_task(self, task_id, message, result):
+    def enqueue_task(self, result, message):
         """Enqueue task
 
-        If a result is being maintained for the task (the given result
-        is not None), its status will be set to ``worq.const.ENQUEUED``.
-
-        :param task_id: Task identifier.
+        :param result: A ``Deferred`` result for the task.
         :param message: Serialized task message.
-        :param result: A Deferred result for the task. None if the task
-            does not require result tracking.
+        :returns: True if the task was enqueued, otherwise False
+            (duplicate task id).
         """
         raise NotImplementedError('abstract method')
 
-    def defer_task(self, task_id, message, args, result):
+    def defer_task(self, result, message, args):
         """Defer a task until its arguments become available
 
-        :param task_id: The task identifier.
+        :param result: A ``Deferred`` result for the task.
         :param message: The serialized task message.
         :param args: A list of task identifiers whose results will be
             included in the arguments to the task.
-        :param result: A Deferred result for the task. None if the task
-            does not require result tracking.
         """
         raise NotImplementedError('abstract method')
 

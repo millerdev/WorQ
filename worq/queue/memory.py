@@ -52,49 +52,44 @@ class TaskQueue(AbstractTaskQueue):
         self.results_by_task = WeakValueDictionary()
         self.result_lock = Lock()
 
-    def _init_result(self, result, status, message=None):
+    def _init_result(self, result, status, message):
         with self.result_lock:
-            try:
-                return self.results_by_task[result.id]
-            except KeyError:
-                pass
+            if result.id in self.results_by_task:
+                return False
             self.results_by_task[result.id] = result
-            result.__status = status
-            result.__result = Queue()
-            result.__task = message
-            result.__args = {}
-            result.__lock = Lock()
-            result.__for = None
-        return result
+        result.__status = status
+        result.__result = Queue()
+        result.__task = message
+        result.__args = {}
+        result.__lock = Lock()
+        result.__for = None
+        return True
 
-    def enqueue_task(self, task_id, message, result):
-        # FIXME given result may not be the real result object.
-        # Should this method return the real one?
-        if result is not None:
-            result = self._init_result(result, const.ENQUEUED)
-        self.queue.put((task_id, message, result))
+    def enqueue_task(self, result, message):
+        if self._init_result(result, const.ENQUEUED, message):
+            self.queue.put(result)
+            return True
+        return False
 
-    def defer_task(self, task_id, message, args, result):
-        assert result is not None
-        assert task_id not in self.results_by_task, task_id
-        self._init_result(result, const.PENDING, message)
-        results = self.results_by_task
-        # keep references to results to prevent GC
-        result.__refs = [results[arg] for arg in args]
+    def defer_task(self, result, message, args):
+        if self._init_result(result, const.PENDING, message):
+            results = self.results_by_task
+            # keep references to results to prevent GC
+            result.__refs = [results[arg] for arg in args]
+            return True
+        return False
 
     def undefer_task(self, task_id):
         result = self.results_by_task[task_id]
-        self.queue.put((task_id, result.__task, result))
+        self.queue.put(result)
 
     def get(self, timeout=None):
         try:
-            task = self.queue.get(timeout=timeout)
+            result = self.queue.get(timeout=timeout)
         except Empty:
             return None
-        ident, message, result = task
-        if result is not None:
-            result.__status = const.PROCESSING
-        return ident, message
+        result.__status = const.PROCESSING
+        return result.id, result.__task
 
     def discard_pending(self):
         while True:
@@ -164,6 +159,8 @@ class TaskQueue(AbstractTaskQueue):
                 result = result_obj.__result.get(timeout=timeout)
         except Empty:
             result = None
+        else:
+            self.results_by_task.pop(task_id)
         return result
 
     def discard_result(self, task_id, task_expired_token):

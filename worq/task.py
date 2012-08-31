@@ -83,12 +83,10 @@ class Queue(object):
         return self.__target
 
 
-def option_descriptors(cls, exclude=['id']):
+def option_descriptors(cls):
     def make_getter(name, default):
         return lambda self: self.options.get(name, default)
     for name, default in cls.OPTIONS.iteritems():
-        if name in exclude:
-            continue
         fget = make_getter(name, default)
         setattr(cls, name, property(fget))
     return cls
@@ -128,7 +126,6 @@ class Task(object):
     FAIL = 'fail'
 
     OPTIONS = {
-        #'id': None,
         'on_error': FAIL,
         'ignore_result': False,
         'update_status': False,
@@ -149,7 +146,6 @@ class Task(object):
         self.options = options = {}
 
         if id is not None:
-            raise NotImplementedError
             options['id'] = id
 
         if on_error not in [Task.PASS, Task.FAIL]:
@@ -201,7 +197,11 @@ class FunctionTask(object):
     OPTIONS = Task.OPTIONS
 
     def __init__(self, name, args, kw, options):
-        self.id = uuid4().hex
+        if 'id' in options:
+            options = dict(options)
+            self.id = options.pop('id')
+        else:
+            self.id = uuid4().hex
         self.name = name
         self.args = args
         self.kw = kw
@@ -286,7 +286,7 @@ class Deferred(object):
                 self._status = 'failed'
             else:
                 self._status = 'success'
-        elif self.task.update_status:
+        else:
             self._status = self.broker.status(self)
         return self._status
 

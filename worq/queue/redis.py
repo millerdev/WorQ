@@ -59,21 +59,46 @@ class TaskQueue(AbstractTaskQueue):
         self.queue_key = QUEUE_PATTERN % self.name
         self.initial_result_timeout = max(int(initial_result_timeout), 1)
 
-    def enqueue_task(self, task_id, message, result):
-        key = TASK_PATTERN % (self.name, task_id)
+    def enqueue_task(self, result, message):
+        task_key = TASK_PATTERN % (self.name, result.id)
+        result_key = RESULT_PATTERN % (self.name, result.id)
         with self.redis.pipeline() as pipe:
-            pipe.hmset(key, {'task': message, 'status': const.ENQUEUED})
-            pipe.lpush(self.queue_key, task_id) # left push (head)
-            pipe.execute()
+            try:
+                pipe.watch(task_key)
+                if pipe.exists(task_key):
+                    return False
+                pipe.multi()
+                pipe.hmset(task_key, {
+                    'task': message,
+                    'status': const.ENQUEUED
+                })
+                pipe.delete(result_key)
+                pipe.lpush(self.queue_key, result.id) # left push (head)
+                pipe.execute()
+                return True
+            except redis.WatchError:
+                return False
 
-    def defer_task(self, task_id, message, args, result):
-        key = TASK_PATTERN % (self.name, task_id)
-        self.redis.hmset(key, {
-            'task': message,
-            'status': const.PENDING,
-            'total_args': len(args),
-            #'args_ready': 0, zero by default
-        })
+    def defer_task(self, result, message, args):
+        task_key = TASK_PATTERN % (self.name, result.id)
+        result_key = RESULT_PATTERN % (self.name, result.id)
+        with self.redis.pipeline() as pipe:
+            try:
+                pipe.watch(task_key)
+                if pipe.exists(task_key):
+                    return False
+                pipe.multi()
+                pipe.hmset(task_key, {
+                    'task': message,
+                    'status': const.PENDING,
+                    'total_args': len(args),
+                    #'args_ready': 0, zero by default
+                })
+                pipe.delete(result_key)
+                pipe.execute()
+                return True
+            except redis.WatchError:
+                return False
 
     def undefer_task(self, task_id):
         self.redis.lpush(self.queue_key, task_id)
@@ -237,10 +262,10 @@ class TaskQueue(AbstractTaskQueue):
             return result[1]
 
     def discard_result(self, task_id, task_expired_token):
-        key = RESULT_PATTERN % (self.name, task_id)
-        task = TASK_PATTERN % (self.name, task_id)
+        result_key = RESULT_PATTERN % (self.name, task_id)
+        task_key = TASK_PATTERN % (self.name, task_id)
         with self.redis.pipeline() as pipe:
-            pipe.delete(task)
-            pipe.rpush(key, task_expired_token)
-            pipe.expire(key, 5)
+            pipe.delete(task_key)
+            pipe.rpush(result_key, task_expired_token)
+            pipe.expire(result_key, 5)
             pipe.execute()
