@@ -24,12 +24,9 @@ SOFTWARE.
 
 TODO
 
-- Cascading timeout (to reserved ids)
 - Deferred.ignore_result
 - process.WorkerPool should work with MemoryQueue (pass results back to pool)
-- Improve performance of RedisQueue.get with a transaction
-    prevent race to remove task_id from queue by only having one broker do that
-- Do not allow duplicate keys in Queue
+- Do not allow duplicate task ids in Queue
 - Rename (Redis|Memory)Queue to TaskQueue (like WorkerPool)
 - Remove status junk (simple to implement externally, adds cruft to task interfaces)
 - Deferred.wait should continue waiting if its value is a Deferred
@@ -51,6 +48,9 @@ TODO
 
 Completed
 
+xx - Improve performance of RedisQueue.get with a transaction
+x   prevent race to remove task_id from queue by only having one broker do that
+x - Cascading timeout (to reserved ids)
 x - Should be able to associate a task with one or more deferred arguments.
 x   example:
 x       r0 = q.task()

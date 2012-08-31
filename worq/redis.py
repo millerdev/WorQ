@@ -109,17 +109,17 @@ class RedisQueue(AbstractMessageQueue):
         if tasks:
             self.redis.delete(*(TASK_PATTERN % (self.name, t) for t in tasks))
 
-    def reserve_argument(self, argument_id, task_id):
+    def reserve_argument(self, argument_id, deferred_id):
         reserve_key = RESERVE_PATTERN % (self.name, argument_id)
         result_key = RESULT_PATTERN % (self.name, argument_id)
         with self.redis.pipeline() as pipe:
-            pipe.watch(reserve_key)
             try:
+                pipe.watch(reserve_key)
                 value = pipe.get(reserve_key)
                 if value is not None:
                     return (False, None)
                 pipe.multi()
-                pipe.set(reserve_key, task_id)
+                pipe.set(reserve_key, deferred_id)
                 pipe.lpop(result_key)
                 result = pipe.execute()[-1]
                 return (True, result)
@@ -141,7 +141,11 @@ class RedisQueue(AbstractMessageQueue):
         return ready == total
 
     def get_arguments(self, task_id):
-        return self.redis.hgetall(ARGS_PATTERN % (self.name, task_id)) or {}
+        args_key = ARGS_PATTERN % (self.name, task_id)
+        with self.redis.pipeline() as pipe:
+            pipe.hgetall(args_key)
+            pipe.delete(args_key)
+            return pipe.execute()[0] or {}
 
     def set_task_timeout(self, task_id, timeout):
         def set_timeout(task_id, args=True, timeout=max(int(timeout), 1)):
@@ -151,22 +155,22 @@ class RedisQueue(AbstractMessageQueue):
                 while True:
                     try:
                         pipe.watch(reserve_key)
-                        reserve_id = pipe.get(reserve_key)
+                        deferred_id = pipe.get(reserve_key)
                         pipe.multi()
                         pipe.expire(task_key, timeout)
                         if args:
                             args_key = ARGS_PATTERN % (self.name, task_id)
                             pipe.expire(args_key, timeout)
                         pipe.execute()
-                        return reserve_id
+                        return deferred_id
                     except redis.WatchError:
                         continue
         # Do not expire arguments of the first task since they have
-        # already been deleted. However, all deferred tasks have
+        # already been deleted. However, all subsequent deferred task's
         # argument timeouts must be set.
-        reserve_id = set_timeout(task_id, False)
-        while reserve_id is not None:
-            reserve_id = set_timeout(reserve_id)
+        deferred_id = set_timeout(task_id, False)
+        while deferred_id is not None:
+            deferred_id = set_timeout(deferred_id)
 
     def set_status(self, task_id, message):
         key = TASK_PATTERN % (self.name, task_id)
@@ -183,11 +187,11 @@ class RedisQueue(AbstractMessageQueue):
         reserve_key = RESERVE_PATTERN % (self.name, task_id)
         with self.redis.pipeline() as pipe:
             while True:
-                pipe.watch(reserve_key)
-                reserve_id = pipe.get(reserve_key)
                 try:
+                    pipe.watch(reserve_key)
+                    deferred_id = pipe.get(reserve_key)
                     pipe.multi()
-                    if reserve_id is None:
+                    if deferred_id is None:
                         pipe.hset(task_key, 'status', const.COMPLETED)
                         pipe.expire(task_key, timeout)
                         pipe.rpush(result_key, message)
@@ -198,7 +202,7 @@ class RedisQueue(AbstractMessageQueue):
                     pipe.delete(reserve_key)
                     pipe.delete(ARGS_PATTERN % (self.name, task_id))
                     pipe.execute()
-                    return reserve_id
+                    return deferred_id
                 except redis.WatchError:
                     continue
 

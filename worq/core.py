@@ -335,13 +335,13 @@ class AbstractMessageQueue(object):
         """Discard pending tasks from queue"""
         raise NotImplementedError('abstract method')
 
-    def reserve_argument(self, argument_id, task_id):
-        """Reserve the result of a task as an argument to another task
+    def reserve_argument(self, argument_id, deferred_id):
+        """Reserve the result of a task as an argument of a deferred task
 
-        :param argument_id: The identifier of the task whose result will
+        :param argument_id: Identifier of a task whose result will
             be reserved for another task.
-        :param task_id: The task who will get the reserved result as
-            an argument.
+        :param deferred_id: Identifier of a deferred task who will get
+            the reserved result as an argument.
         :returns: A two-tuple: (<bool>, <str>). The first item is a flag
             denoting if the argument was reserved, and the second is
             the serialized result if it was available else None.

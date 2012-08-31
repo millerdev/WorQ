@@ -103,14 +103,14 @@ class MemoryQueue(AbstractMessageQueue):
             except Empty:
                 break
 
-    def reserve_argument(self, argument_id, task_id):
+    def reserve_argument(self, argument_id, deferred_id):
         result = self.results_by_task.get(argument_id)
         if result is None:
             return (False, None)
         with result.__lock:
             if result.__for is not None:
                 return (False, None)
-            result.__for = self.results_by_task[task_id]
+            result.__for = deferred_id
             try:
                 message = result.__result.get_nowait()
             except Empty:
@@ -146,8 +146,7 @@ class MemoryQueue(AbstractMessageQueue):
         if result_obj is not None:
             with result_obj.__lock:
                 result_obj.__result.put(message)
-                f = result_obj.__for
-                return f.id if f is not None else f
+                return result_obj.__for
 
     def pop_result(self, task_id, timeout):
         result_obj = self.results_by_task.get(task_id)
