@@ -23,7 +23,7 @@
 from __future__ import absolute_import
 from urlparse import urlparse
 from worq.core import DEFAULT, Broker
-from worq.task import Task, TaskSet, TaskFailure, TaskSpace
+from worq.task import Task, TaskFailure, TaskSpace
 from worq.memory import MemoryQueue
 from worq.redis import RedisQueue
 

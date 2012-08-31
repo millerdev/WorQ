@@ -24,13 +24,60 @@ SOFTWARE.
 
 TODO
 
-- Should be able to associate a task with one or more deferred results.
-    r0 = task()
-    r1 = task()
-    res = task([r0, r1]) # task is enqueued until r0 and r1 have completed
-    res.wait()
+- Should be able to associate a task with one or more deferred arguments.
+    example:
+        r0 = q.task()
+        r1 = q.task()
+        res = q.task([r0, r1]) # defer execution until r0 and r1 have completed
+        res.wait()
+    limitations:
+        - deferreds are not thread-safe
+        - should not attempt to retrieve deferred argument values
+          prior to enqueueing the dependent task
+    algorithm:
+        enqueue task with deferred arguments (deferred task)
+            setup deferred argument storage (with info to invoke deferred task)
+            for each deferred argument:
+                atomically
+                    set result promise task_id (if not already set)
+                    pop result promise
+                    pop result message
+                    return (promise, message)
+                if promise:
+                    # we now own the result
+                    if message is valid:
+                        transfer result to deferred argument storage
+                        if all arguments are present:
+                            enqueue deferred task
+                else:
+                    raise result already allocated error
+        worker set result
+            atomically
+                get result promise task_id
+                set result message
+            if promise task_id is valid:
+                transfer result to deferred argument storage
+                if all arguments are present:
+                    enqueue deferred task
+
+    algorithm: enqueue task with deferred arguments
+        tag each deferred argument with task_id
+        when deferred argument becomes available:
+            push it onto the argument stack of the task
+            if argument stack is full
+                enqueue task with arguments
+        create cleanup/heartbeat task, which will...
+            if task has been enqueued
+                return (stop heartbeats)
+            for each arg task that has been lost
+                push TaskFailure onto argument stack
+            if argument stack is full
+                enqueue task with arguments
+            else schedule next cleanup/heartbeat
 - Deferred.wait should continue waiting if its value is a Deferred
     - Deferred should be picklable
+- Allow setting custom task id
+    - Raise error when invoking task with duplicate id
 - TaskSet should be resilient to lost intermediate results
 - What happens to TaskSet results when a subtask is not invoked before the
     result set expires (e.g., when the broker is busy)? This should not happen.

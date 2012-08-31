@@ -24,7 +24,7 @@ import logging
 import time
 from uuid import uuid4
 
-from worq.const import DAY, DEFAULT
+from worq.const import HOUR, DEFAULT
 
 log = logging.getLogger(__name__)
 
@@ -90,6 +90,10 @@ class Task(object):
     is invoked by calling the task object.
 
     :param queue: The Queue object identifying the task to be executed.
+    :param on_error: Denotes what should happen when a deferred argument's
+        task fails. The ``TaskFailure`` will be passed as an argument if this
+        value is ``Task.PASS``, otherwise fail before invoking this task (the
+        default action).
     :param result_status: Default False. When True, send an extra keyword
         argument ('update_status') when invoking the task. The 'update_status'
         argument is a function that can be called to update the status of the
@@ -99,6 +103,8 @@ class Task(object):
         specified and 'result_status' is True. If neither 'result_status' nor
         'result_timeout' are specified then the task result is ignored.
     """
+
+    PASS = 'pass'
 
     def __init__(self, queue, **options):
         self.queue = queue
@@ -135,8 +141,12 @@ class FunctionTask(object):
         return self.options.get('heartrate', 30)
 
     @property
+    def on_error_pass(self):
+        return self.options.get('on_error') == Task.PASS
+
+    @property
     def result_timeout(self):
-        return self.options.get('result_timeout', DAY)
+        return self.options.get('result_timeout', HOUR)
 
     def invoke(self, broker):
         queue = broker.name
@@ -252,7 +262,9 @@ class Deferred(object):
 
 
 class TaskSet(object):
-    """Execute a set of tasks in parallel, process results in a final task.
+    """DEPRECATED pass deferred results to task
+
+    Execute a set of tasks in parallel, process results in a final task.
 
     The first argument passed to the final task is a list of all non-
     null results returned by tasks in the TaskSet. A pass-through task
@@ -354,18 +366,8 @@ class TaskSet(object):
         task, args, kw = self.tasks.pop()
         opts = dict(self.options)
         opts.pop('taskset_on_error', None)
-        if not self.tasks:
-            return task.with_options(opts)([], *args, **kw)
-        taskset = FunctionTask(task.name, args, kw, opts)
-        result = task.broker.init_taskset(taskset)
-        options = dict(self.options,
-            taskset_id=taskset.id,
-            taskset_name=taskset.name,
-            taskset_size=len(self.tasks),
-        )
-        for t, a, k in self.tasks:
-            t.with_options(options)(*a, **k)
-        return result
+        tasks = [t(*a, **k) for t, a, k in self.tasks]
+        return task.with_options(opts)(tasks, *args, **kw)
 
 
 class TaskSpace(object):
@@ -451,6 +453,7 @@ class TaskStatus(object):
 
 worqspace = TaskSpace(__name__)
 
+# TODO remove
 @worqspace.task
 def identity(arg):
     return arg

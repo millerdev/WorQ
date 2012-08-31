@@ -21,7 +21,7 @@
 # SOFTWARE.
 
 import worq.const as const
-from worq import get_broker, queue, Task, TaskSet, TaskFailure, TaskSpace
+from worq import get_broker, queue, Task, TaskFailure, TaskSpace
 from worq.tests.test_examples import example
 from worq.tests.util import (assert_raises, eq_, eventually,
     thread_worker, TimeoutLock)
@@ -226,7 +226,7 @@ def task_error(url):
 
 
 @example
-def taskset(url):
+def task_with_deferred_arguments(url):
 
     def func(arg):
         return arg
@@ -239,18 +239,19 @@ def taskset(url):
         # -- task-invoking code, usually another process --
         q = queue(url)
 
-        tasks = TaskSet(result_timeout=WAIT)
-        tasks.add(q.func, 1)
-        tasks.add(q.func, 2)
-        tasks.add(q.func, 3)
-        res = tasks(q.sum)
+        res = q.sum([
+            q.func(1),
+            q.func(2),
+            q.func(3),
+        ])
 
         assert res.wait(WAIT), repr(res)
         eq_(res.value, 6)
 
 
 @example
-def taskset_composition(url):
+def more_deferred_arguments(url):
+    from operator import add
 
     def func(arg):
         return arg
@@ -258,60 +259,95 @@ def taskset_composition(url):
     broker = get_broker(url)
     broker.expose(func)
     broker.expose(sum)
+    broker.expose(add)
     with thread_worker(broker):
 
         # -- task-invoking code, usually another process --
         q = queue(url)
 
-        set_0 = TaskSet()
-        set_0.add(q.func, 1)
-        set_0.add(q.func, 2)
-        set_0.add(q.func, 3)
+        sum_123 = q.sum([
+            q.func(1),
+            q.func(2),
+            q.func(3),
+        ])
 
-        set_1 = TaskSet(result_timeout=WAIT)
-        set_1.add(q.func, 4)
-        set_1.add(set_0, q.sum)
-        set_1.add(q.func, 5)
+        sum_1234 = q.add(sum_123, q.func(4))
 
-        res = set_1(q.sum)
-
-        assert res.wait(WAIT), repr(res)
-        eq_(res.value, 15)
+        assert sum_1234.wait(WAIT), repr(res)
+        eq_(sum_1234.value, 10)
 
 
 @example
-def tasksets_ignore_nulls(url):
+def dependency_graph(url):
+    """Dependency graph
+                         |
+            _____________|_____________
+           /             |             \
+          / \           / \           / \
+         /   \         /   \         /   \
+      left   right  left   right  left   right
+         \   /         \   /         \   /
+          \ /           \ /           \ /
+         catch         catch         catch
+            \            |            /
+             \___________|___________/
+                         |
+                      combine
+    """
+    ts = TaskSpace()
 
-    def func(arg):
-        return arg
+    @ts.task
+    def left(num):
+        return ('left', num)
+
+    @ts.task
+    def right(num):
+        return ('right', num)
+
+    @ts.task
+    def catch(left, right, num):
+        return [num, left, right]
+
+    @ts.task
+    def combine(items):
+        return {i[0]: i[1:] for i in items}
 
     broker = get_broker(url)
-    broker.expose(func)
+    broker.expose(ts)
     with thread_worker(broker):
 
         # -- task-invoking code, usually another process --
         q = queue(url)
 
-        tasks = TaskSet(result_timeout=WAIT)
-        tasks.add(q.func, 1)
-        tasks.add(q.func, None)
-        tasks.add(q.func, 3)
-        tasks.add(q.func, None)
-        tasks.add(q.func, 5)
+        catches = []
+        for num in [1, 2, 3]:
+            left = q.left(num)
+            right = q.right(num)
 
-        res = tasks() # call taskset without args returns all results
+            catch = q.catch(left, right, num)
 
+            catches.append(catch)
+
+        res = q.combine(catches)
         assert res.wait(WAIT), repr(res)
-        eq_(res.value, [1, 3, 5])
+
+        eq_(res.value, {
+            1: [('left', 1), ('right', 1)],
+            2: [('left', 2), ('right', 2)],
+            3: [('left', 3), ('right', 3)],
+        })
+
+
+# TODO test pass completed deferred result to task (should work)
 
 
 @example
-def taskset_with_failed_subtasks(url):
-    """TaskSet with TaskFailures passed to the final task
+def task_with_failed_deferred_arguments(url):
+    """TaskFailure can be passed to the final task.
 
-    By default, a TaskSet fails if any of its subtasks fail. However, setting
-    the `on_error=TaskSet.PASS` option on the TaskSet will cause TaskFailure
-    objects to be passed as the result of any task that fails.
+    By default, a task fails if any of its deferred arguments fail. However,
+    setting the `on_error=Task.PASS` option will cause a TaskFailure to be
+    passed as the result of any task that fails.
     """
 
     def func(arg):
@@ -326,12 +362,13 @@ def taskset_with_failed_subtasks(url):
         # -- task-invoking code, usually another process --
         q = queue(url)
 
-        tasks = TaskSet(result_timeout=WAIT, on_error=TaskSet.PASS)
-        tasks.add(q.func, 1)
-        tasks.add(q.func, 0)
-        tasks.add(q.func, 2)
-        res = tasks(q.func)
-        res.wait(WAIT)
+        task = Task(q.func, on_error=Task.PASS)
+        res = task([
+            q.func(1),
+            q.func(0),
+            q.func(2),
+        ])
+        res.wait(timeout=WAIT)
 
         fail = TaskFailure(
             'func', 'default', res.value[1].task_id, 'Exception: zero fail!')

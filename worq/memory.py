@@ -50,27 +50,50 @@ class MemoryQueue(AbstractMessageQueue):
         super(MemoryQueue, self).__init__(*args, **kw)
         self.queue = Queue()
         self.results_by_task = WeakValueDictionary()
+        self.result_lock = Lock()
+
+    def _init_result(self, result, status, message=None):
+        with self.result_lock:
+            try:
+                return self.results_by_task[result.id]
+            except KeyError:
+                pass
+            self.results_by_task[result.id] = result
+            result.__status = status
+            result.__result = Queue()
+            result.__task = message
+            result.__lock = Lock()
+            result.__for = None
+        return result
 
     def enqueue_task(self, task_id, message, result):
         # FIXME given result may not be the real result object.
         # Should this method return the real one?
-        self.queue.put((task_id, message))
         if result is not None:
-            result = self.results_by_task.setdefault(task_id, result)
-            result.__status = const.ENQUEUED
-            if not hasattr(result, '_%s__result' % type(self).__name__):
-                result.__result = Queue()
+            result = self._init_result(result, const.ENQUEUED)
+        self.queue.put((task_id, message, result))
+
+    def defer_task(self, task_id, message, args, result):
+        assert result is not None
+        assert task_id not in self.results_by_task, task_id
+        self._init_result(result, const.PENDING, message)
+        results = self.results_by_task
+        result.__args = {arg: results[arg] for arg in args}
+        result.__args_ready = 0
+
+    def undefer_task(self, task_id):
+        result = self.results_by_task[task_id]
+        self.queue.put((task_id, result.__task, result))
 
     def get(self, timeout=None):
         try:
             task = self.queue.get(timeout=timeout)
         except Empty:
-            task = None
-        if task is not None:
-            result_obj = self.results_by_task.get(task[0])
-            if result_obj is not None:
-                result_obj.__status = const.PROCESSING
-        return task
+            return None
+        ident, message, result = task
+        if result is not None:
+            result.__status = const.PROCESSING
+        return ident, message
 
     def discard_pending(self):
         while True:
@@ -78,6 +101,31 @@ class MemoryQueue(AbstractMessageQueue):
                 self.queue.get_nowait()
             except Empty:
                 break
+
+    def reserve_argument(self, argument_id, task_id):
+        result = self.results_by_task.get(argument_id)
+        if result is None:
+            return (False, None)
+        with result.__lock:
+            if result.__for is not None:
+                return (False, None)
+            result.__for = self.results_by_task[task_id]
+            try:
+                value = result.__result.get_nowait()
+            except Empty:
+                value = None
+            return (True, value)
+
+    def set_argument(self, task_id, arg_id, message):
+        result = self.results_by_task[task_id]
+        with result.__lock:
+            self.results_by_task[arg_id].__result.put(message)
+            result.__args_ready += 1
+            return result.__args_ready == len(result.__args)
+
+    def pop_argument(self, task_id, arg_id):
+        arg = self.results_by_task[task_id].__args.pop(arg_id)
+        return arg.__result.get_nowait()
 
     def set_task_timeout(self, task_id, timeout):
         pass
@@ -94,12 +142,20 @@ class MemoryQueue(AbstractMessageQueue):
     def set_result(self, task_id, message, timeout):
         result_obj = self.results_by_task.get(task_id)
         if result_obj is not None:
-            result_obj.__result.put(message)
+            with result_obj.__lock:
+                result_obj.__result.put(message)
+                f = result_obj.__for
+                return f.id if f is not None else f
 
     def pop_result(self, task_id, timeout):
         result_obj = self.results_by_task.get(task_id)
         if result_obj is None:
             return const.TASK_EXPIRED
+#        with result_obj.__lock:
+#            if result_obj.__for is not None:
+#                raise NotImplementedError
+#                #return const.RESERVED
+#            result_obj.__for = task_id
         try:
             if timeout == 0:
                 result = result_obj.__result.get_nowait()
@@ -113,25 +169,3 @@ class MemoryQueue(AbstractMessageQueue):
         result_obj = self.results_by_task.pop(task_id)
         if result_obj is not None:
             result_obj.__result.put(task_expired_token)
-
-    def init_taskset(self, taskset_id, task_message, result):
-        if result is not None:
-            self.results_by_task[taskset_id] = result
-            result.__result = Queue() # final result queue
-            result.__task = task_message
-            result.__subsets = [] # child taskset result references
-            result.__results = [] # taskset results
-            result.__lock = Lock()
-            if 'taskset_id' in result.task.options:
-                # bind to parent taskset to prevent result loss due to GC
-                parent_id = result.task.options['taskset_id']
-                self.results_by_task[parent_id].__subsets.append(result)
-
-    def update_taskset(self, taskset_id, num, message, timeout):
-        result_obj = self.results_by_task.get(taskset_id)
-        if result_obj is not None:
-            with result_obj.__lock:
-                value = result_obj.__results
-                value.append(message)
-                if len(value) == num:
-                    return result_obj.__task, value

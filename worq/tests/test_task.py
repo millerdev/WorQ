@@ -20,35 +20,14 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from worq import get_broker, queue, Task, TaskSet, TaskFailure, TaskSpace
+from worq import get_broker, queue, Task, TaskFailure, TaskSpace
 from worq.tests.util import (assert_raises, eq_, eventually, thread_worker,
     with_urls)
 
 WAIT = 60 # default wait time (1 minute)
 
-def test_empty_TaskSet_with_identity_task():
-    tasks = TaskSet()
-    res = tasks()
-    assert res, repr(res)
-    eq_(res.value, [])
-    eq_(repr(res), '<Deferred worq.task.identity [:] success>')
-
 @with_urls
-def test_empty_TaskSet(url):
-    broker = get_broker(url)
-    broker.expose(len)
-    with thread_worker(broker):
-
-        q = queue(url)
-
-        tasks = TaskSet(result_timeout=60)
-        res = tasks(q.len)
-        assert res.wait(WAIT), repr(res)
-        eq_(res.value, 0)
-        assert ' len ' in repr(res), repr(res)
-
-@with_urls
-def test_TaskSet_on_error_FAIL(url):
+def test_deferred_task_fail_on_error(url):
 
     def func(arg):
         if arg == 0:
@@ -62,15 +41,11 @@ def test_TaskSet_on_error_FAIL(url):
         # -- task-invoking code, usually another process --
         q = queue(url)
 
-        tasks = TaskSet(result_timeout=WAIT)
-        tasks.add(q.func, 1)
-        tasks.add(q.func, 0)
-        tasks.add(q.func, 2)
-        res = tasks(q.func)
+        res = q.func([q.func(1), q.func(0), q.func(2)])
         res.wait(timeout=WAIT)
 
-        with assert_raises(TaskFailure,
-                'func [default:%s] subtask(s) failed' % res.id):
+        msg = 'func [default:%s] Exception: zero fail!' % res.task.args[0][1].id
+        with assert_raises(TaskFailure, msg):
             res.value
 
 @with_urls
