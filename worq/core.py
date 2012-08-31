@@ -37,10 +37,10 @@ log = logging.getLogger(__name__)
 class Broker(object):
 
     task_options = set([
-        'result_status',
+        'on_error',
+        'update_status',
         'result_timeout',
         'heartrate',
-        'on_error',
     ])
 
     def __init__(self, message_queue):
@@ -84,7 +84,7 @@ class Broker(object):
                 % ', '.join(unknown_options))
         message, args = self.serialize(task, deferred=True)
         timeout = options.get('result_timeout', HOUR)
-        if options.get('result_status', False) or timeout:
+        if options.get('update_status', False) or timeout:
             result = Deferred(self, task)
         else:
             result = None

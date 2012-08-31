@@ -118,7 +118,7 @@ def wait_for_result(url):
 
 
 @example
-def result_status(url):
+def update_status(url):
     # NOTE a lock is used to control state interactions between the producer
     # and the worker for illustration purposes only. This type of lock-step
     # interaction is not normally needed or even desired.
@@ -137,7 +137,7 @@ def result_status(url):
         # -- task-invoking code, usually another process --
         q = get_queue(url)
 
-        func_task = Task(q.func, result_status=True)
+        func_task = Task(q.func, update_status=True)
         res = func_task('arg')
 
         eventually((lambda:res.status), const.ENQUEUED)

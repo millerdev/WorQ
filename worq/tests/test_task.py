@@ -62,7 +62,7 @@ def test_Deferred_wait_with_status_update(url):
         # -- task-invoking code, usually another process --
         q = get_queue(url)
 
-        task = Task(q.func, result_status=True, result_timeout=WAIT)
+        task = Task(q.func, update_status=True, result_timeout=WAIT)
         res = task(1)
         res.wait(timeout=WAIT)
 

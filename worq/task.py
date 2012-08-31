@@ -86,30 +86,78 @@ class Queue(object):
 class Task(object):
     """Remote task handle
 
-    This class can be used to construct a task with custom options. A task
-    is invoked by calling the task object.
+    This class can be used to construct a task with custom options.
+    A task is invoked by calling the task object.
 
     :param queue: The Queue object identifying the task to be executed.
-    :param on_error: Denotes what should happen when a deferred argument's
-        task fails. The ``TaskFailure`` will be passed as an argument if this
-        value is ``Task.PASS``, otherwise fail before invoking this task (the
-        default action).
-    :param result_status: Default False. When True, send an extra keyword
-        argument ('update_status') when invoking the task. The 'update_status'
-        argument is a function that can be called to update the status of the
-        task result.
-    :param result_timeout: Timeout value for retaining the result in the result
-        store. A default timeout of one day is used if 'result_timeout' is not
-        specified and 'result_status' is True. If neither 'result_status' nor
-        'result_timeout' are specified then the task result is ignored.
+    :param id: A unique identifier for this task. Use ``uuid4`` by
+        default. Only one task with a given id may be in the queue at
+        any given time. Note that a task with ``ignore_result=True``
+        will be removed from the queue before it is invoked.
+    :param on_error: What should happen when a deferred argument's task
+        fails. The ``TaskFailure`` exception will be passed as an
+        argument if this value is ``Task.PASS``, otherwise this will
+        fail before it is invoked (the default action).
+    :param ignore_result: Create a fire-and-forget task if true. Task
+        invocation will return None rather than a Deferred object.
+    :param update_status: When true, send an extra 'update_status'
+        keyword argument when invoking the task. The 'update_status'
+        argument is a function that can be called to update the status
+        of the task result. This is incompatible with ignore_result.
+    :param result_timeout: Number of seconds to retain the result after
+        the task has completed. The default timeout is one hour. This
+        is ignored by some TaskQueue implementations.
+    :param heartrate: Number of seconds between task heartbeats, which
+        are maintained by some WorkerPool implementations to prevent
+        result timeout while the task is running.
     """
 
     PASS = 'pass'
+    FAIL = 'fail'
 
-    def __init__(self, queue, **options):
+    def __init__(self, queue,
+                id=None,
+                on_error=FAIL,
+                ignore_result=False,
+                update_status=False,
+                result_timeout=HOUR,
+                heartrate=30,
+            ):
         self.queue = queue
         self.name = queue._Queue__target
-        self.options = options
+        self.options = options = {}
+
+        if id is not None:
+            raise NotImplementedError
+            options['id'] = id
+
+        if on_error not in [Task.PASS, Task.FAIL]:
+            raise ValueError('invalid on_error: %r' % (on_error,))
+        if on_error == Task.PASS:
+            options['on_error'] = on_error
+
+        if ignore_result:
+            raise NotImplementedError
+            if update_status:
+                raise ValueError(
+                    'ignore_result is incompatible with update_status')
+            if result_timeout != HOUR:
+                raise ValueError(
+                    'ignore_result is incompatible with result_timeout')
+            options['ignore_result'] = bool(ignore_result)
+
+        if update_status:
+            options['update_status'] = bool(update_status)
+
+        if not isinstance(result_timeout, (int, long, float)):
+            raise ValueError('invalid result_timeout: %r' % (result_timeout,))
+        if result_timeout != HOUR:
+            options['result_timeout'] = result_timeout
+
+        if not isinstance(heartrate, (int, long, float)):
+            raise ValueError('invalid heartrate: %r' % (heartrate,))
+        if heartrate != 30:
+            options['heartrate'] = heartrate
 
     @property
     def broker(self):
@@ -136,9 +184,6 @@ class FunctionTask(object):
         self.kw = kw
         self.options = options
 
-    @property
-    def heartrate(self):
-        return self.options.get('heartrate', 30)
 
     @property
     def on_error_pass(self):
@@ -148,11 +193,15 @@ class FunctionTask(object):
     def result_timeout(self):
         return self.options.get('result_timeout', HOUR)
 
+    @property
+    def heartrate(self):
+        return self.options.get('heartrate', 30)
+
     def invoke(self, broker):
         queue = broker.name
         log.debug('invoke %s [%s:%s]', self.name, queue, self.id)
-        result_status = self.options.get('result_status', False)
-        if result_status:
+        update_status = self.options.get('update_status', False)
+        if update_status:
             def update_status(value):
                 broker.set_status(self, value)
             self.kw['update_status'] = update_status
@@ -223,7 +272,7 @@ class Deferred(object):
                 self._status = 'failed'
             else:
                 self._status = 'success'
-        elif self.task.options.get('result_status', False):
+        elif self.task.options.get('update_status', False):
             self._status = self.broker.status(self)
         return self._status
 
