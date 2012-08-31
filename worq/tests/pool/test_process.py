@@ -39,49 +39,7 @@ log = logging.getLogger(__name__)
 WAIT = 60 # default wait timeout (1 minute)
 
 
-@with_urls(exclude='memory')
-def test_WorkerPool_sigterm(url):
-    with tempdir() as tmp:
-
-        logpath = join(tmp, 'output.log')
-        proc = run_in_subprocess(worker_pool, url,
-            WorkerPool_sigterm_init, (tmp, logpath), workers=3)
-
-        with printlog(logpath), force_kill_on_exit(proc):
-
-            q = get_queue(url)
-
-            q.func('text')
-
-            eventually(reader(tmp, 'func.started'), '')
-
-            proc.terminate() # signal pool shutdown
-            touch(join(tmp, 'func.unlock')) # allow func to proceed
-
-            eventually(reader(tmp, 'func.out'), 'text')
-            eventually(verify_shutdown(proc), True, timeout=WAIT)
-
-def WorkerPool_sigterm_init(url, tmp, logpath):
-    process_config(logpath, 'Worker-%s' % os.getpid())
-    broker = get_broker(url)
-
-    @broker.expose
-    def func(arg, lock=None):
-        # signal func started
-        touch(join(tmp, 'func.started'))
-
-        # wait for unlock
-        eventually(reader(tmp, 'func.unlock'), '')
-
-        # write data to file
-        touch(join(tmp, 'func.out'), arg)
-
-        log.debug('func complete')
-
-    return broker
-
-
-@with_urls(exclude='memory')
+@with_urls
 def test_WorkerPool_start_twice(url):
     broker = get_broker(url)
     pool = WorkerPool(broker, get_broker, workers=1)
@@ -90,7 +48,7 @@ def test_WorkerPool_start_twice(url):
             pool.start(handle_sigterm=False)
 
 
-@with_urls(exclude='memory')
+@with_urls
 def test_WorkerPool_max_worker_tasks(url):
     broker = get_broker(url)
     pool = WorkerPool(broker, WorkerPool_max_worker_tasks_init,
@@ -98,10 +56,7 @@ def test_WorkerPool_max_worker_tasks(url):
     with start_pool(pool):
 
         q = get_queue(url)
-
-        t = [q.func() for n in range(4)]
-
-        res = q.results(t)
+        res = q.results([q.func() for n in range(4)])
         assert res.wait(WAIT), repr(res)
 
         results = res.value
@@ -125,7 +80,7 @@ def WorkerPool_max_worker_tasks_init(url):
     return broker
 
 
-@with_urls(exclude='memory')
+@with_urls
 def test_WorkerPool_heartrate(url):
     broker = get_broker(url)
     pool = WorkerPool(broker, WorkerPool_heartrate_init, workers=1)
@@ -134,8 +89,7 @@ def test_WorkerPool_heartrate(url):
         q = get_queue(url)
 
         res = Task(q.suicide_worker, heartrate=0.1, result_timeout=5)()
-        #assert res.wait(WAIT), repr(res)
-        assert res.wait(10), repr(res)
+        assert res.wait(WAIT), repr(res)
         print repr(res)
         with assert_raises(TaskExpired):
             res.value
@@ -181,6 +135,48 @@ def WorkerPool_crashed_worker_init(url):
         sys.exit()
 
     broker.expose(os.getpid)
+
+    return broker
+
+
+@with_urls(exclude='memory')
+def test_WorkerPool_sigterm(url):
+    with tempdir() as tmp:
+
+        logpath = join(tmp, 'output.log')
+        proc = run_in_subprocess(worker_pool, url,
+            WorkerPool_sigterm_init, (tmp, logpath), workers=3)
+
+        with printlog(logpath), force_kill_on_exit(proc):
+
+            q = get_queue(url)
+
+            q.func('text')
+
+            eventually(reader(tmp, 'func.started'), '')
+
+            proc.terminate() # signal pool shutdown
+            touch(join(tmp, 'func.unlock')) # allow func to proceed
+
+            eventually(reader(tmp, 'func.out'), 'text')
+            eventually(verify_shutdown(proc), True, timeout=WAIT)
+
+def WorkerPool_sigterm_init(url, tmp, logpath):
+    process_config(logpath, 'Worker-%s' % os.getpid())
+    broker = get_broker(url)
+
+    @broker.expose
+    def func(arg, lock=None):
+        # signal func started
+        touch(join(tmp, 'func.started'))
+
+        # wait for unlock
+        eventually(reader(tmp, 'func.unlock'), '')
+
+        # write data to file
+        touch(join(tmp, 'func.out'), arg)
+
+        log.debug('func complete')
 
     return broker
 

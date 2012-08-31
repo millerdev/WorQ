@@ -218,7 +218,7 @@ class FunctionTask(object):
     def on_error_pass(self):
         return self.options.get('on_error') == Task.PASS
 
-    def invoke(self, broker):
+    def invoke(self, broker, return_result=False):
         queue = broker.name
         log.debug('invoke %s [%s:%s] %s',
             self.name, queue, self.id, self.options)
@@ -246,6 +246,9 @@ class FunctionTask(object):
                 '%s: %s' % (type(err).__name__, err))
             raise
         finally:
+            if return_result:
+                return result
+            # hope this doesn't run if an exception has been raised
             broker.set_result(self, result)
 
 

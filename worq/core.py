@@ -132,9 +132,9 @@ class Broker(object):
         #log.debug('next %s [%s:%s]', task.name, self.name, task_id)
         return task
 
-    def invoke(self, task):
+    def invoke(self, task, **kw):
         """Invoke the given task (normally only called by a worker)"""
-        task.invoke(self)
+        return task.invoke(self, **kw)
 
     def heartbeat(self, task):
         """Extend task result timeout"""

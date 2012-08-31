@@ -237,7 +237,8 @@ class WorkerProxy(object):
                         broker.task_failed(task)
                         raise Error('unknown cause of death')
                     broker.heartbeat(task)
-                status = child.recv()
+                (result, status) = child.recv()
+                broker.set_result(task, result)
             except Exception:
                 log.error('%s died unexpectedly', str(self), exc_info=True)
                 child.close()
@@ -278,15 +279,15 @@ def worker_process(parent_pid, reduced_cn,
         if task == STOP:
             break
 
-        broker.invoke(task)
+        result = broker.invoke(task, return_result=True)
 
         if max_worker_tasks is None:
-            parent.send(None) # signal task completion
+            parent.send((result, None)) # send result
         elif task_count < max_worker_tasks:
             task_count += 1
-            parent.send(None) # signal task completion
+            parent.send((result, None)) # send result
         else:
-            parent.send(STOP) # signal task completion, worker stopping
+            parent.send((result, STOP)) # send result, worker stopping
             break
 
     log.info('Worker-%s stopped', os.getpid())

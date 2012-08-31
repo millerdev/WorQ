@@ -97,6 +97,8 @@ class TaskQueue(AbstractTaskQueue):
                 self.queue.get_nowait()
             except Empty:
                 break
+        with self.result_lock:
+            self.results.clear()
 
     def reserve_argument(self, argument_id, deferred_id):
         result = self.results.get(argument_id)
@@ -160,7 +162,7 @@ class TaskQueue(AbstractTaskQueue):
         except Empty:
             result = None
         else:
-            self.results.pop(task_id)
+            self.results.pop(task_id, None)
         return result
 
     def discard_result(self, task_id, task_expired_token):
