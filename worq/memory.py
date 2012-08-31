@@ -27,13 +27,13 @@ from threading import Lock
 from weakref import WeakValueDictionary
 
 import worq.const as const
-from worq.core import AbstractMessageQueue
+from worq.core import AbstractTaskQueue
 
 log = logging.getLogger(__name__)
 
 _REFS = WeakValueDictionary()
 
-class MemoryQueue(AbstractMessageQueue):
+class TaskQueue(AbstractTaskQueue):
     """Simple in-memory message queue implementation
 
     Does not support named queues.
@@ -47,7 +47,7 @@ class MemoryQueue(AbstractMessageQueue):
         return obj
 
     def __init__(self, *args, **kw):
-        super(MemoryQueue, self).__init__(*args, **kw)
+        super(TaskQueue, self).__init__(*args, **kw)
         self.queue = Queue()
         self.results_by_task = WeakValueDictionary()
         self.result_lock = Lock()

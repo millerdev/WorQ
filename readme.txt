@@ -25,9 +25,8 @@ SOFTWARE.
 TODO
 
 - Deferred.ignore_result
+- Task(..., id=...) - Do not allow duplicate task ids in Queue
 - process.WorkerPool should work with MemoryQueue (pass results back to pool)
-- Do not allow duplicate task ids in Queue
-- Rename (Redis|Memory)Queue to TaskQueue (like WorkerPool)
 - Remove status junk (simple to implement externally, adds cruft to task interfaces)
 - Deferred.wait should continue waiting if its value is a Deferred
     - Deferred should be picklable
@@ -48,6 +47,7 @@ TODO
 
 Completed
 
+x - Rename (Redis|Memory)Queue to TaskQueue (like WorkerPool)
 xx - Improve performance of RedisQueue.get with a transaction
 x   prevent race to remove task_id from queue by only having one broker do that
 x - Cascading timeout (to reserved ids)

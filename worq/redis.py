@@ -27,7 +27,7 @@ import redis
 import time
 import worq.const as const
 from urlparse import urlparse
-from worq.core import AbstractMessageQueue
+from worq.core import AbstractTaskQueue
 
 log = logging.getLogger(__name__)
 
@@ -38,7 +38,7 @@ RESERVE_PATTERN = 'worq:reserved:%s:%s'
 RESULT_PATTERN = 'worq:result:%s:%s'
 
 
-class RedisQueue(AbstractMessageQueue):
+class TaskQueue(AbstractTaskQueue):
     """Redis message queue
 
     WARNING this implementation depends on all task ids being unique.
@@ -48,7 +48,7 @@ class RedisQueue(AbstractMessageQueue):
 
     def __init__(self, url, name=const.DEFAULT, initial_result_timeout=60,
             redis_factory=redis.StrictRedis):
-        super(RedisQueue, self).__init__(url, name)
+        super(TaskQueue, self).__init__(url, name)
         urlobj = urlparse(url)
         if ':' in urlobj.netloc:
             host, port = urlobj.netloc.rsplit(':', 1)

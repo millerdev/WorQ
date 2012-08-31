@@ -127,7 +127,7 @@ class Broker(object):
     def next_task(self, timeout=None):
         """Get the next task from the queue.
 
-        :param timeout: See ``AbstractMessageQueue.get``.
+        :param timeout: See ``AbstractTaskQueue.get``.
         :returns: A task object. None on timeout expiration or if the task
             could not be deserialized.
         """
@@ -263,7 +263,7 @@ class Broker(object):
         self.messages.discard_result(task.id, self.serialize(TASK_EXPIRED))
 
 
-class AbstractMessageQueue(object):
+class AbstractTaskQueue(object):
     """Message queue abstract base class
 
     Task/result lifecycle

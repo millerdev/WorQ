@@ -24,13 +24,16 @@ from __future__ import absolute_import
 from urlparse import urlparse
 from worq.core import DEFAULT, Broker
 from worq.task import Task, TaskFailure, TaskSpace
-from worq.memory import MemoryQueue
-from worq.redis import RedisQueue
+from worq.memory import TaskQueue as MemoryQueue
+try:
+    from worq.redis import TaskQueue as RedisQueue
+except ImportError:
+    RedisQueue = None
 
-BROKER_REGISTRY = {
-    'memory': MemoryQueue.factory,
-    'redis': RedisQueue,
-}
+BROKER_REGISTRY = {'memory': MemoryQueue.factory}
+
+if RedisQueue is not None:
+    BROKER_REGISTRY['redis'] = RedisQueue
 
 def get_broker(url, name=DEFAULT, *args, **kw):
     """Create a new broker
