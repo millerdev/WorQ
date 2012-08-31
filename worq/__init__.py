@@ -24,9 +24,9 @@ from __future__ import absolute_import
 from urlparse import urlparse
 from worq.core import DEFAULT, Broker
 from worq.task import Task, TaskFailure, TaskSpace
-from worq.memory import TaskQueue as MemoryQueue
+from worq.queue.memory import TaskQueue as MemoryQueue
 try:
-    from worq.redis import TaskQueue as RedisQueue
+    from worq.queue.redis import TaskQueue as RedisQueue
 except ImportError:
     RedisQueue = None
 
@@ -50,8 +50,8 @@ def get_broker(url, name=DEFAULT, *args, **kw):
         raise ValueError('invalid broker URL: %s' % url)
     return Broker(factory(url, name, *args, **kw))
 
-def queue(url, name=DEFAULT, target=''):
-    """Get a queue object for invoking remote tasks
+def get_queue(url, name=DEFAULT, target=''):
+    """Get a queue for invoking remote tasks
 
     :param url: URL of the task queue.
     :param queue_name: The name of the queue on which tasks should be invoked.

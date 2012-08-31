@@ -29,7 +29,7 @@ import sys
 from contextlib import contextmanager
 from nose.tools import nottest
 from os.path import dirname, exists, join
-from worq import get_broker, queue
+from worq import get_broker, get_queue
 from worq.pool.process import WorkerPool, Error, run_in_subprocess
 from worq.task import Task, TaskSet, TaskExpired
 from worq.tests.util import assert_raises, eq_, eventually, tempdir, with_urls
@@ -49,7 +49,7 @@ def test_WorkerPool_sigterm(url):
 
         with printlog(logpath), force_kill_on_exit(proc):
 
-            q = queue(url)
+            q = get_queue(url)
 
             q.func('text')
 
@@ -97,7 +97,7 @@ def test_WorkerPool_max_worker_tasks(url):
         workers=1, max_worker_tasks=3)
     with start_pool(pool):
 
-        q = queue(url)
+        q = get_queue(url)
 
         t = TaskSet(result_timeout=WAIT)
         for n in range(4):
@@ -133,7 +133,7 @@ def test_WorkerPool_heartrate(url):
     pool = WorkerPool(broker, WorkerPool_heartrate_init, workers=1)
     with start_pool(pool):
 
-        q = queue(url)
+        q = get_queue(url)
 
         res = Task(q.suicide_worker, heartrate=0.1, result_timeout=5)()
         #assert res.wait(WAIT), repr(res)
@@ -162,7 +162,7 @@ def test_WorkerPool_crashed_worker(url):
     pool = WorkerPool(broker, WorkerPool_crashed_worker_init, workers=1)
     with start_pool(pool):
 
-        q = queue(url)
+        q = get_queue(url)
 
         res = Task(q.getpid, result_timeout=WAIT)()
         assert res.wait(WAIT), repr(res)
@@ -198,7 +198,7 @@ def test_WorkerPool_worker_shutdown_on_parent_die(url):
 
         with printlog(logpath), force_kill_on_exit(proc):
 
-            res = Task(queue(url).getpid, result_timeout=WAIT)()
+            res = Task(get_queue(url).getpid, result_timeout=WAIT)()
             assert res.wait(WAIT), repr(res)
 
             os.kill(proc.pid, signal.SIGKILL) # force kill pool master

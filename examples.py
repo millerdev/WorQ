@@ -21,7 +21,7 @@
 # SOFTWARE.
 
 import worq.const as const
-from worq import get_broker, queue, Task, TaskFailure, TaskSpace
+from worq import get_broker, get_queue, Task, TaskFailure, TaskSpace
 from worq.tests.test_examples import example
 from worq.tests.util import (assert_raises, eq_, eventually,
     thread_worker, TimeoutLock)
@@ -40,7 +40,7 @@ def simple(url):
     with thread_worker(broker):
 
         # -- task-invoking code, usually another process --
-        q = queue(url)
+        q = get_queue(url)
 
         q.func('arg')
 
@@ -69,7 +69,7 @@ def expose_method(url):
     with thread_worker(broker):
 
         # -- task-invoking code, usually another process --
-        q = queue(url)
+        q = get_queue(url)
         q.update_value(2)
 
         eventually((lambda:db.value), 2)
@@ -88,7 +88,7 @@ def named_queue(url):
     with thread_worker(broker):
 
         # -- task-invoking code, usually another process --
-        q = queue(url, 'name')
+        q = get_queue(url, 'name')
         q.func(1)
 
         eventually((lambda:state), [1])
@@ -105,7 +105,7 @@ def wait_for_result(url):
     with thread_worker(broker):
 
         # -- task-invoking code, usually another process --
-        q = queue(url)
+        q = get_queue(url)
 
         func_task = Task(q.func, result_timeout=WAIT)
         res = func_task('arg')
@@ -135,7 +135,7 @@ def result_status(url):
     with thread_worker(broker, lock):
 
         # -- task-invoking code, usually another process --
-        q = queue(url)
+        q = get_queue(url)
 
         func_task = Task(q.func, result_status=True)
         res = func_task('arg')
@@ -166,7 +166,7 @@ def no_such_task(url):
     with thread_worker(broker):
 
         # -- task-invoking code, usually another process --
-        q = queue(url)
+        q = get_queue(url)
 
         res = Task(q.func, result_timeout=WAIT)('arg')
 
@@ -190,7 +190,7 @@ def worker_interrupted(url):
     with thread_worker(broker):
 
         # -- task-invoking code, usually another process --
-        q = queue(url)
+        q = get_queue(url)
 
         res = Task(q.func, result_timeout=WAIT)('arg')
         completed = res.wait(WAIT)
@@ -213,7 +213,7 @@ def task_error(url):
     with thread_worker(broker):
 
         # -- task-invoking code, usually another process --
-        q = queue(url)
+        q = get_queue(url)
 
         res = Task(q.func, result_timeout=WAIT)('arg')
         completed = res.wait(WAIT)
@@ -237,7 +237,7 @@ def task_with_deferred_arguments(url):
     with thread_worker(broker):
 
         # -- task-invoking code, usually another process --
-        q = queue(url)
+        q = get_queue(url)
 
         res = q.sum([
             q.func(1),
@@ -263,7 +263,7 @@ def more_deferred_arguments(url):
     with thread_worker(broker):
 
         # -- task-invoking code, usually another process --
-        q = queue(url)
+        q = get_queue(url)
 
         sum_123 = q.sum([
             q.func(1),
@@ -317,7 +317,7 @@ def dependency_graph(url):
     with thread_worker(broker):
 
         # -- task-invoking code, usually another process --
-        q = queue(url)
+        q = get_queue(url)
 
         catches = []
         for num in [1, 2, 3]:
@@ -360,7 +360,7 @@ def task_with_failed_deferred_arguments(url):
     with thread_worker(broker):
 
         # -- task-invoking code, usually another process --
-        q = queue(url)
+        q = get_queue(url)
 
         task = Task(q.func, on_error=Task.PASS)
         res = task([
@@ -395,7 +395,7 @@ def task_namespaces(url):
     with thread_worker(broker):
 
         # -- task-invoking code, usually another process --
-        q = queue(url, target='module.path')
+        q = get_queue(url, target='module.path')
 
         q.foo()
         q.bar(1)
@@ -434,7 +434,7 @@ def more_namespaces(url):
     with thread_worker(broker):
 
         # -- task-invoking code, usually another process --
-        q = queue(url)
+        q = get_queue(url)
 
         q.foo.join(1)
         q.foo.bar.kick(2)

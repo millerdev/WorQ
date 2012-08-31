@@ -20,7 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from worq import get_broker, queue, Task
+from worq import get_broker, get_queue, Task
 from worq.task import TaskExpired
 from worq.tests.util import (assert_raises, eq_, eventually, thread_worker,
     with_urls, TimeoutLock)
@@ -36,7 +36,7 @@ def test_Broker_task_failed(url):
     broker = get_broker(url)
     broker.expose(func)
     with thread_worker(broker):
-        q = queue(url)
+        q = get_queue(url)
 
         res = Task(q.func, result_timeout=WAIT)()
         broker.task_failed(res)

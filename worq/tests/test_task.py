@@ -20,7 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from worq import get_broker, queue, Task, TaskFailure, TaskSpace
+from worq import get_broker, get_queue, Task, TaskFailure, TaskSpace
 from worq.tests.util import (assert_raises, eq_, eventually, thread_worker,
     with_urls)
 
@@ -39,7 +39,7 @@ def test_deferred_task_fail_on_error(url):
     with thread_worker(broker):
 
         # -- task-invoking code, usually another process --
-        q = queue(url)
+        q = get_queue(url)
 
         res = q.func([q.func(1), q.func(0), q.func(2)])
         res.wait(timeout=WAIT)
@@ -60,7 +60,7 @@ def test_Deferred_wait_with_status_update(url):
     with thread_worker(broker):
 
         # -- task-invoking code, usually another process --
-        q = queue(url)
+        q = get_queue(url)
 
         task = Task(q.func, result_status=True, result_timeout=WAIT)
         res = task(1)
