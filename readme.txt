@@ -22,6 +22,8 @@ SOFTWARE.
 
 -------------------------------------------------------------------------------
 
+See examples.py for usage.
+
 TODO
 
 - process.WorkerPool should work with MemoryQueue (pass results back to pool)

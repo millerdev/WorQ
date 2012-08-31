@@ -49,14 +49,14 @@ class TaskQueue(AbstractTaskQueue):
     def __init__(self, *args, **kw):
         super(TaskQueue, self).__init__(*args, **kw)
         self.queue = Queue()
-        self.results_by_task = WeakValueDictionary()
+        self.results = WeakValueDictionary()
         self.result_lock = Lock()
 
     def _init_result(self, result, status, message):
         with self.result_lock:
-            if result.id in self.results_by_task:
+            if result.id in self.results:
                 return False
-            self.results_by_task[result.id] = result
+            self.results[result.id] = result
         result.__status = status
         result.__result = Queue()
         result.__task = message
@@ -73,14 +73,14 @@ class TaskQueue(AbstractTaskQueue):
 
     def defer_task(self, result, message, args):
         if self._init_result(result, const.PENDING, message):
-            results = self.results_by_task
+            results = self.results
             # keep references to results to prevent GC
             result.__refs = [results[arg] for arg in args]
             return True
         return False
 
     def undefer_task(self, task_id):
-        result = self.results_by_task[task_id]
+        result = self.results[task_id]
         self.queue.put(result)
 
     def get(self, timeout=None):
@@ -99,7 +99,7 @@ class TaskQueue(AbstractTaskQueue):
                 break
 
     def reserve_argument(self, argument_id, deferred_id):
-        result = self.results_by_task.get(argument_id)
+        result = self.results.get(argument_id)
         if result is None:
             return (False, None)
         with result.__lock:
@@ -113,14 +113,14 @@ class TaskQueue(AbstractTaskQueue):
             return (True, message)
 
     def set_argument(self, task_id, argument_id, message):
-        result = self.results_by_task[task_id]
+        result = self.results[task_id]
         with result.__lock:
             result.__args[argument_id] = message
             return len(result.__args) == len(result.__refs)
 
     def get_arguments(self, task_id):
         try:
-            return self.results_by_task[task_id].__args
+            return self.results[task_id].__args
         except KeyError:
             return {}
 
@@ -128,23 +128,23 @@ class TaskQueue(AbstractTaskQueue):
         pass
 
     def set_status(self, task_id, message):
-        result_obj = self.results_by_task.get(task_id)
+        result_obj = self.results.get(task_id)
         if result_obj is not None:
             result_obj.__status = message
 
     def get_status(self, task_id):
-        result_obj = self.results_by_task.get(task_id)
+        result_obj = self.results.get(task_id)
         return None if result_obj is None else result_obj.__status
 
     def set_result(self, task_id, message, timeout):
-        result_obj = self.results_by_task.get(task_id)
+        result_obj = self.results.get(task_id)
         if result_obj is not None:
             with result_obj.__lock:
                 result_obj.__result.put(message)
                 return result_obj.__for
 
     def pop_result(self, task_id, timeout):
-        result_obj = self.results_by_task.get(task_id)
+        result_obj = self.results.get(task_id)
         if result_obj is None:
             return const.TASK_EXPIRED
 #        with result_obj.__lock:
@@ -160,10 +160,10 @@ class TaskQueue(AbstractTaskQueue):
         except Empty:
             result = None
         else:
-            self.results_by_task.pop(task_id)
+            self.results.pop(task_id)
         return result
 
     def discard_result(self, task_id, task_expired_token):
-        result_obj = self.results_by_task.pop(task_id)
+        result_obj = self.results.pop(task_id)
         if result_obj is not None:
             result_obj.__result.put(task_expired_token)
