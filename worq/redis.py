@@ -33,8 +33,9 @@ log = logging.getLogger(__name__)
 
 QUEUE_PATTERN = 'worq:queue:%s'
 TASK_PATTERN = 'worq:task:%s:%s'
+ARGS_PATTERN = 'worq:args:%s:%s'
+RESERVE_PATTERN = 'worq:reserved:%s:%s'
 RESULT_PATTERN = 'worq:result:%s:%s'
-TASKSET_PATTERN = 'worq:taskset:%s:%s'
 
 
 class RedisQueue(AbstractMessageQueue):
@@ -64,6 +65,18 @@ class RedisQueue(AbstractMessageQueue):
             pipe.hmset(key, {'task': message, 'status': const.ENQUEUED})
             pipe.lpush(self.queue_key, task_id) # left push (head)
             pipe.execute()
+
+    def defer_task(self, task_id, message, args, result):
+        key = TASK_PATTERN % (self.name, task_id)
+        self.redis.hmset(key, {
+            'task': message,
+            'status': const.PENDING,
+            'total_args': len(args),
+            #'args_ready': 0, zero by default
+        })
+
+    def undefer_task(self, task_id):
+        self.redis.lpush(self.queue_key, task_id)
 
     def get(self, timeout=0):
         queue = self.queue_key
@@ -96,11 +109,45 @@ class RedisQueue(AbstractMessageQueue):
         if tasks:
             self.redis.delete(*(TASK_PATTERN % (self.name, t) for t in tasks))
 
+    def reserve_argument(self, argument_id, task_id):
+        reserve_key = RESERVE_PATTERN % (self.name, argument_id)
+        result_key = RESULT_PATTERN % (self.name, argument_id)
+        with self.redis.pipeline() as pipe:
+            pipe.watch(reserve_key)
+            try:
+                value = pipe.get(reserve_key)
+                if value is not None:
+                    return (False, None)
+                pipe.multi()
+                pipe.set(reserve_key, task_id)
+                pipe.lpop(result_key)
+                result = pipe.execute()[-1]
+                return (True, result)
+            except redis.WatchError:
+                return (False, None)
+
+    def set_argument(self, task_id, argument_id, message):
+        task_key = TASK_PATTERN % (self.name, task_id)
+        args_key = ARGS_PATTERN % (self.name, task_id)
+        with self.redis.pipeline() as pipe:
+            pipe.hincrby(task_key, 'args_ready', 1)
+            pipe.hget(task_key, 'total_args')
+            pipe.hset(args_key, argument_id, message)
+            ready, total, x = pipe.execute()
+        total = int(total)
+        assert isinstance(ready, (int, long)), repr(ready)
+        assert ready > 0, ready
+        assert total > 0, total
+        return ready == total
+
+    def get_arguments(self, task_id):
+        return self.redis.hgetall(ARGS_PATTERN % (self.name, task_id)) or {}
+
     def set_task_timeout(self, task_id, timeout):
         timeout = max(int(timeout), 1)
         with self.redis.pipeline() as pipe:
             pipe.expire(TASK_PATTERN % (self.name, task_id), timeout)
-            pipe.expire(TASKSET_PATTERN % (self.name, task_id), timeout) # ???
+            pipe.expire(RESERVE_PATTERN % (self.name, task_id), timeout)
             pipe.execute()
 
     def set_status(self, task_id, message):
@@ -113,14 +160,29 @@ class RedisQueue(AbstractMessageQueue):
 
     def set_result(self, task_id, message, timeout):
         timeout = max(int(timeout), 1)
-        key = RESULT_PATTERN % (self.name, task_id)
-        task = TASK_PATTERN % (self.name, task_id)
+        task_key = TASK_PATTERN % (self.name, task_id)
+        result_key = RESULT_PATTERN % (self.name, task_id)
+        reserve_key = RESERVE_PATTERN % (self.name, task_id)
         with self.redis.pipeline() as pipe:
-            pipe.hset(task, 'status', const.COMPLETED)
-            pipe.expire(task, timeout)
-            pipe.rpush(key, message)
-            pipe.expire(key, timeout)
-            pipe.execute()
+            while True:
+                pipe.watch(reserve_key)
+                reserve_id = pipe.get(reserve_key)
+                try:
+                    pipe.multi()
+                    if reserve_id is None:
+                        pipe.hset(task_key, 'status', const.COMPLETED)
+                        pipe.expire(task_key, timeout)
+                        pipe.rpush(result_key, message)
+                        pipe.expire(result_key, timeout)
+                    else:
+                        pipe.delete(task_key)
+                        pipe.delete(result_key)
+                    pipe.delete(reserve_key)
+                    pipe.delete(ARGS_PATTERN % (self.name, task_id))
+                    pipe.execute()
+                    return reserve_id
+                except redis.WatchError:
+                    continue
 
     def pop_result(self, task_id, timeout):
         key = RESULT_PATTERN % (self.name, task_id)
@@ -160,24 +222,3 @@ class RedisQueue(AbstractMessageQueue):
             pipe.rpush(key, task_expired_token)
             pipe.expire(key, 5)
             pipe.execute()
-
-    def init_taskset(self, taskset_id, task_message, result):
-        # TODO taskset result persistence should update heartbeat
-        key = TASK_PATTERN % (self.name, taskset_id)
-        self.redis.hmset(key, {
-            'status': const.PENDING,
-            'task': task_message,
-        })
-
-    def update_taskset(self, taskset_id, num_tasks, message, timeout):
-        key = TASKSET_PATTERN % (self.name, taskset_id)
-        num = self.redis.rpush(key, message)
-        if num == num_tasks:
-            task = TASK_PATTERN % (self.name, taskset_id)
-            with self.redis.pipeline() as pipe:
-                pipe.hget(task, 'task')
-                pipe.lrange(key, 0, -1)
-                pipe.delete(key)
-                return pipe.execute()[:2]
-        else:
-            self.redis.expire(key, max(int(timeout), 1))

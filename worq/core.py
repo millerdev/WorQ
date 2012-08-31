@@ -136,7 +136,7 @@ class Broker(object):
             return message
         task_id, message = message
         try:
-            task = self.deserialize(message, deferred=True)
+            task = self.deserialize(message, task_id)
         except Exception:
             log.error('cannot deserialize task [%s:%s]',
                 self.name, task_id, exc_info=True)
@@ -166,12 +166,10 @@ class Broker(object):
         """
         if deferred:
             args = set()
-            task_id = obj.id
-            assert ' ' not in task_id, task_id
             def persistent_id(obj):
                 if isinstance(obj, Deferred):
                     args.add(obj.id)
-                    return '%s %s' % (task_id, obj.id)
+                    return obj.id
                 return None
         else:
             args = None
@@ -186,7 +184,7 @@ class Broker(object):
         msg = data.getvalue()
         return (msg, args) if deferred else msg
 
-    def deserialize(self, message, deferred=False):
+    def deserialize(self, message, task_id=None):
         """Deserialize an object
 
         :param message: A serialized object (string).
@@ -194,29 +192,23 @@ class Broker(object):
             raise an error if the message contains deferreds.
         """
         fail = []
-        if deferred:
-            cache = {}
-            pop_argument = self.messages.pop_argument
-            def persistent_load(pid):
-                if pid not in cache:
-                    task_id, result_id = pid.split(' ', 1)
-                    arg = pop_argument(task_id, result_id)
-                    if arg is None:
-                        raise UnpicklingError('cannot get argument: %s' % pid)
-                    cache[pid] = value = loads(arg)
-                    if isinstance(value, TaskFailure):
-                        fail.append(value)
-                    return value
-                return cache[pid]
-        else:
+        if task_id is None:
             persistent_load = []
+        else:
+            args = self.messages.get_arguments(task_id)
+            args = {k: loads(v) for k, v in args.items()}
+            def persistent_load(arg_id):
+                value = args[arg_id]
+                if isinstance(value, TaskFailure):
+                    fail.append(value)
+                return value
         data = StringIO(message)
         pickle = Unpickler(data)
         pickle.persistent_load = persistent_load
-        if not deferred and persistent_load:
-            raise UnpicklingError(
-                'message contained references to unknown objects')
         obj = pickle.load()
+        if task_id is None and persistent_load:
+            raise UnpicklingError('message contained references to '
+                'external objects: %s', persistent_load)
         if fail and not obj.on_error_pass:
             # TODO detect errors earlier, fail earlier, cancel enqueued tasks
             self.set_result(obj, fail[0])
@@ -316,7 +308,10 @@ class AbstractMessageQueue(object):
         raise NotImplementedError('abstract method')
 
     def undefer_task(self, task_id):
-        """Enqueue a deferred task"""
+        """Enqueue a deferred task
+
+        All deferred arguments must be available immediately.
+        """
         raise NotImplementedError('abstract method')
 
     def get(self, timeout=None):
@@ -353,24 +348,23 @@ class AbstractMessageQueue(object):
         """
         raise NotImplementedError('abstract method')
 
-    def set_argument(self, task_id, arg_id, message):
+    def set_argument(self, task_id, argument_id, message):
         """Set deferred argument for task
 
         :param task_id: The identifier of the task to which the argument will
             be passed.
-        :param arg_id: The argument identifier.
+        :param argument_id: The argument identifier.
         :param message: The serialized argument value.
         :returns: True if all arguments have been set for the task.
         """
         raise NotImplementedError('abstract method')
 
-    def pop_argument(self, task_id, arg_id):
-        """Pop a deferred argument value
+    def get_arguments(self, task_id):
+        """Get a dict of deferred arguments
 
-        :param task_id: The identifier of the task to which the argument will
+        :param task_id: The identifier of the task to which the arguments will
             be passed.
-        :param arg_id: The argument identifier.
-        :returns: A serialized object. None if the argument did not exist.
+        :returns: A dict of serialized arguments keyed by argument id.
         """
         raise NotImplementedError('abstract method')
 

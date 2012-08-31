@@ -62,6 +62,7 @@ class MemoryQueue(AbstractMessageQueue):
             result.__status = status
             result.__result = Queue()
             result.__task = message
+            result.__args = {}
             result.__lock = Lock()
             result.__for = None
         return result
@@ -78,8 +79,8 @@ class MemoryQueue(AbstractMessageQueue):
         assert task_id not in self.results_by_task, task_id
         self._init_result(result, const.PENDING, message)
         results = self.results_by_task
-        result.__args = {arg: results[arg] for arg in args}
-        result.__args_ready = 0
+        # keep references to results to prevent GC
+        result.__refs = [results[arg] for arg in args]
 
     def undefer_task(self, task_id):
         result = self.results_by_task[task_id]
@@ -111,21 +112,22 @@ class MemoryQueue(AbstractMessageQueue):
                 return (False, None)
             result.__for = self.results_by_task[task_id]
             try:
-                value = result.__result.get_nowait()
+                message = result.__result.get_nowait()
             except Empty:
-                value = None
-            return (True, value)
+                message = None
+            return (True, message)
 
-    def set_argument(self, task_id, arg_id, message):
+    def set_argument(self, task_id, argument_id, message):
         result = self.results_by_task[task_id]
         with result.__lock:
-            self.results_by_task[arg_id].__result.put(message)
-            result.__args_ready += 1
-            return result.__args_ready == len(result.__args)
+            result.__args[argument_id] = message
+            return len(result.__args) == len(result.__refs)
 
-    def pop_argument(self, task_id, arg_id):
-        arg = self.results_by_task[task_id].__args.pop(arg_id)
-        return arg.__result.get_nowait()
+    def get_arguments(self, task_id):
+        try:
+            return self.results_by_task[task_id].__args
+        except KeyError:
+            return {}
 
     def set_task_timeout(self, task_id, timeout):
         pass
