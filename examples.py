@@ -71,9 +71,10 @@ def expose_method(url):
         # -- task-invoking code, usually another process --
         q = get_queue(url)
         q.update_value(2)
+        res = Task(q.update_value, ignore_result=True)(2)
 
         eventually((lambda:db.value), 2)
-
+        eq_(res, None) # verify that we did not get a deferred result
 
 @example
 def named_queue(url):

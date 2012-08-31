@@ -83,6 +83,17 @@ class Queue(object):
         return self.__target
 
 
+def option_descriptors(cls, exclude=['id']):
+    def make_getter(name, default):
+        return lambda self: self.options.get(name, default)
+    for name, default in cls.OPTIONS.iteritems():
+        if name in exclude:
+            continue
+        fget = make_getter(name, default)
+        setattr(cls, name, property(fget))
+    return cls
+
+@option_descriptors
 class Task(object):
     """Remote task handle
 
@@ -105,15 +116,25 @@ class Task(object):
         argument is a function that can be called to update the status
         of the task result. This is incompatible with ignore_result.
     :param result_timeout: Number of seconds to retain the result after
-        the task has completed. The default timeout is one hour. This
-        is ignored by some TaskQueue implementations.
+        the task has completed. The default is one hour. This is ignored
+        by some TaskQueue implementations.
     :param heartrate: Number of seconds between task heartbeats, which
         are maintained by some WorkerPool implementations to prevent
-        result timeout while the task is running.
+        result timeout while the task is running. The default is 30
+        seconds.
     """
 
     PASS = 'pass'
     FAIL = 'fail'
+
+    OPTIONS = {
+        #'id': None,
+        'on_error': FAIL,
+        'ignore_result': False,
+        'update_status': False,
+        'result_timeout': HOUR,
+        'heartrate': 30,
+    }
 
     def __init__(self, queue,
                 id=None,
@@ -137,7 +158,6 @@ class Task(object):
             options['on_error'] = on_error
 
         if ignore_result:
-            raise NotImplementedError
             if update_status:
                 raise ValueError(
                     'ignore_result is incompatible with update_status')
@@ -175,7 +195,10 @@ class Task(object):
         return '<Task %s [%s]>' % (self.name, self.queue._Queue__queue)
 
 
+@option_descriptors
 class FunctionTask(object):
+
+    OPTIONS = Task.OPTIONS
 
     def __init__(self, name, args, kw, options):
         self.id = uuid4().hex
@@ -184,24 +207,15 @@ class FunctionTask(object):
         self.kw = kw
         self.options = options
 
-
     @property
     def on_error_pass(self):
         return self.options.get('on_error') == Task.PASS
 
-    @property
-    def result_timeout(self):
-        return self.options.get('result_timeout', HOUR)
-
-    @property
-    def heartrate(self):
-        return self.options.get('heartrate', 30)
-
     def invoke(self, broker):
         queue = broker.name
-        log.debug('invoke %s [%s:%s]', self.name, queue, self.id)
-        update_status = self.options.get('update_status', False)
-        if update_status:
+        log.debug('invoke %s [%s:%s] %s',
+            self.name, queue, self.id, self.options)
+        if self.update_status:
             def update_status(value):
                 broker.set_status(self, value)
             self.kw['update_status'] = update_status
@@ -272,7 +286,7 @@ class Deferred(object):
                 self._status = 'failed'
             else:
                 self._status = 'success'
-        elif self.task.options.get('update_status', False):
+        elif self.task.update_status:
             self._status = self.broker.status(self)
         return self._status
 

@@ -36,13 +36,6 @@ log = logging.getLogger(__name__)
 
 class Broker(object):
 
-    task_options = set([
-        'on_error',
-        'update_status',
-        'result_timeout',
-        'heartrate',
-    ])
-
     def __init__(self, message_queue):
         self.messages = message_queue
         self.tasks = {}
@@ -77,17 +70,11 @@ class Broker(object):
         return Queue(self, target)
 
     def enqueue(self, task):
-        options = task.options
-        unknown_options = set(options) - self.task_options
-        if unknown_options:
-            raise ValueError('unrecognized task options: %s'
-                % ', '.join(unknown_options))
         message, args = self.serialize(task, deferred=True)
-        timeout = options.get('result_timeout', HOUR)
-        if options.get('update_status', False) or timeout:
-            result = Deferred(self, task)
-        else:
+        if task.ignore_result:
             result = None
+        else:
+            result = Deferred(self, task)
         store = self.messages
         if args:
             log.debug('defer %s [%s:%s]', task.name, self.name, task.id)
