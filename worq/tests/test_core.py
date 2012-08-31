@@ -49,7 +49,14 @@ def test_Broker_task_failed(url):
 
 
 @with_urls
-def test_Broker_duplicate_task_id(url):
+def test_Broker_duplicate_task_id_string(url):
+    Broker_duplicate_task_id(url, 'int')
+
+@with_urls
+def test_Broker_duplicate_task_id_function(url):
+    Broker_duplicate_task_id(url, lambda arg: type(arg).__name__)
+
+def Broker_duplicate_task_id(url, identifier):
     lock = TimeoutLock(locked=True)
     state = []
 
@@ -62,17 +69,17 @@ def test_Broker_duplicate_task_id(url):
     with thread_worker(broker, lock):
         q = get_queue(url)
 
-        task = Task(q.func, id='job_0')
+        task = Task(q.func, id=identifier)
         res = task(1)
 
         eventually((lambda:res.status), const.ENQUEUED)
-        msg = 'func [default:job_0] cannot enqueue task with duplicate id'
+        msg = 'func [default:int] cannot enqueue task with duplicate id'
         with assert_raises(TaskFailure, msg):
             task(2)
 
         lock.release()
         eventually((lambda:res.status), const.PROCESSING)
-        msg = 'func [default:job_0] cannot enqueue task with duplicate id'
+        msg = 'func [default:int] cannot enqueue task with duplicate id'
         with assert_raises(TaskFailure, msg):
             task(3)
 

@@ -40,6 +40,7 @@ TODO
 
 Completed
 
+x - Task(..., id=function) - function gets same args as task
 x - Remove TaskSet
 x - What happens to TaskSet results when a subtask is not invoked before the
 x   result set expires (e.g., when the broker is busy)? This should not happen.

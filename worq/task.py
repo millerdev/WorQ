@@ -99,10 +99,13 @@ class Task(object):
     A task is invoked by calling the task object.
 
     :param queue: The Queue object identifying the task to be executed.
-    :param id: A unique identifier for this task. Use ``uuid4`` by
-        default. Only one task with a given id may be in the queue at
-        any given time. Note that a task with ``ignore_result=True``
-        will be removed from the queue before it is invoked.
+    :param id: A unique identifier string for this task, or a function
+        that returns a unique identifier string when called with the
+        task's arguments. If not specified, a global unique identifier
+        is generated for each call. Only one task with a given id may
+        exist in the queue at any given time. Note that a task with
+        ``ignore_result=True`` will be removed from the queue before it
+        is invoked.
     :param on_error: What should happen when a deferred argument's task
         fails. The ``TaskFailure`` exception will be passed as an
         argument if this value is ``Task.PASS``, otherwise this will
@@ -199,7 +202,11 @@ class FunctionTask(object):
     def __init__(self, name, args, kw, options):
         if 'id' in options:
             options = dict(options)
-            self.id = options.pop('id')
+            ident = options.pop('id')
+            if isinstance(ident, basestring):
+                self.id = ident
+            else:
+                self.id = ident(*args, **kw)
         else:
             self.id = uuid4().hex
         self.name = name
