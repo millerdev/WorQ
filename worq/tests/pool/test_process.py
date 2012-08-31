@@ -31,7 +31,7 @@ from nose.tools import nottest
 from os.path import dirname, exists, join
 from worq import get_broker, get_queue
 from worq.pool.process import WorkerPool, Error, run_in_subprocess
-from worq.task import Task, TaskSet, TaskExpired
+from worq.task import Task, TaskExpired
 from worq.tests.util import assert_raises, eq_, eventually, tempdir, with_urls
 
 log = logging.getLogger(__name__)

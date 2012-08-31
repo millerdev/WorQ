@@ -24,18 +24,12 @@ SOFTWARE.
 
 TODO
 
-- Remove TaskSet
 - process.WorkerPool should work with MemoryQueue (pass results back to pool)
 - ?? Remove status junk (simple to implement externally, adds cruft to task interfaces)
 - Deferred.wait should continue waiting if its value is a Deferred
     - Deferred should be picklable
 - Allow setting custom task id
     - Raise error when invoking task with duplicate id
-- TaskSet should be resilient to lost intermediate results
-- What happens to TaskSet results when a subtask is not invoked before the
-    result set expires (e.g., when the broker is busy)? This should not happen.
-    IOW, TaskSet results should not expire when there are subtasks in the queue
-    waiting to be invoked.
 - Allow tasks to be cancelled
 - Implement "map" and "reduce"
 - Decouple TaskSpace from Broker?
@@ -46,6 +40,12 @@ TODO
 
 Completed
 
+x - Remove TaskSet
+x - What happens to TaskSet results when a subtask is not invoked before the
+x   result set expires (e.g., when the broker is busy)? This should not happen.
+x   IOW, TaskSet results should not expire when there are subtasks in the queue
+x   waiting to be invoked.
+x - TaskSet should be resilient to lost intermediate results
 x - Task(..., id=...) - Do not allow duplicate task ids in Queue
 x - Deferred.ignore_result
 x - Rename (Redis|Memory)Queue to TaskQueue (like WorkerPool)
