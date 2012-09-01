@@ -58,7 +58,7 @@ class TaskQueue(AbstractTaskQueue):
                 return False
             self.results[result.id] = result
         result.__status = status
-        result.__result = Queue()
+        result.__value = Queue()
         result.__task = message
         result.__args = {}
         result.__lock = Lock()
@@ -109,7 +109,7 @@ class TaskQueue(AbstractTaskQueue):
                 return (False, None)
             result.__for = deferred_id
             try:
-                message = result.__result.get_nowait()
+                message = result.__value.get_nowait()
             except Empty:
                 message = None
             return (True, message)
@@ -130,42 +130,42 @@ class TaskQueue(AbstractTaskQueue):
         pass
 
     def set_status(self, task_id, message):
-        result_obj = self.results.get(task_id)
-        if result_obj is not None:
-            result_obj.__status = message
+        result = self.results.get(task_id)
+        if result is not None:
+            result.__status = message
 
     def get_status(self, task_id):
-        result_obj = self.results.get(task_id)
-        return None if result_obj is None else result_obj.__status
+        result = self.results.get(task_id)
+        return None if result is None else result.__status
 
     def set_result(self, task_id, message, timeout):
-        result_obj = self.results.get(task_id)
-        if result_obj is not None:
-            with result_obj.__lock:
-                result_obj.__result.put(message)
-                return result_obj.__for
+        result = self.results.get(task_id)
+        if result is not None:
+            with result.__lock:
+                result.__value.put(message)
+                return result.__for
 
     def pop_result(self, task_id, timeout):
-        result_obj = self.results.get(task_id)
-        if result_obj is None:
+        result = self.results.get(task_id)
+        if result is None:
             return const.TASK_EXPIRED
-#        with result_obj.__lock:
-#            if result_obj.__for is not None:
+#        with result.__lock:
+#            if result.__for is not None:
 #                raise NotImplementedError
 #                #return const.RESERVED
-#            result_obj.__for = task_id
+#            result.__for = task_id
         try:
             if timeout == 0:
-                result = result_obj.__result.get_nowait()
+                value = result.__value.get_nowait()
             else:
-                result = result_obj.__result.get(timeout=timeout)
+                value = result.__value.get(timeout=timeout)
         except Empty:
-            result = None
+            value = None
         else:
             self.results.pop(task_id, None)
-        return result
+        return value
 
     def discard_result(self, task_id, task_expired_token):
-        result_obj = self.results.pop(task_id)
-        if result_obj is not None:
-            result_obj.__result.put(task_expired_token)
+        result = self.results.pop(task_id)
+        if result is not None:
+            result.__value.put(task_expired_token)
