@@ -126,8 +126,10 @@ class WorkerPool(object):
         args = (timeout,)
         self._consumer_thread = Thread(target=self._consume_tasks, args=args)
         self._consumer_thread.start()
+        log.info('WorkerPool-%s started', os.getpid())
 
         if handle_sigterm:
+            log.info('Press CTRL+C or send SIGTERM to stop')
             setup_exit_handler()
             try:
                 # Sleep indefinitely waiting for a signal
@@ -309,7 +311,8 @@ def run_in_subprocess(_func, *args, **kw):
     # close_fds=True prevents intermittent deadlock in Popen
     # See http://bugs.python.org/issue2320
     proc = subprocess.Popen([PYTHON_EXE, '-c', prog],
-                            stdin=subprocess.PIPE, close_fds=True)
+                            stdin=subprocess.PIPE, close_fds=True,
+                            preexec_fn=disable_signal_propagation)
     assert proc.stdout is None
     assert proc.stderr is None
     try:
@@ -383,6 +386,11 @@ class PopenProcess(object):
         return getattr(self._proc, name)
 
 
+def disable_signal_propagation():
+    # http://stackoverflow.com/a/5446983/10840
+    os.setpgrp()
+
+
 def setup_exit_handler():
     # http://danielkaes.wordpress.com/2009/06/04/how-to-catch-kill-events-with-python/
     def on_exit(sig, func=None):
@@ -396,4 +404,5 @@ def setup_exit_handler():
             raise Exception("pywin32 not installed for Python " + version)
     else:
         import signal
+        signal.signal(signal.SIGINT, on_exit)
         signal.signal(signal.SIGTERM, on_exit)
