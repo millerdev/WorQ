@@ -59,6 +59,9 @@ class TaskQueue(AbstractTaskQueue):
         self.queue_key = QUEUE_PATTERN % self.name
         self.initial_result_timeout = max(int(initial_result_timeout), 1)
 
+    def ping(self):
+        return self.redis.ping()
+
     def enqueue_task(self, result, message):
         task_key = TASK_PATTERN % (self.name, result.id)
         result_key = RESULT_PATTERN % (self.name, result.id)

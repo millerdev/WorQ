@@ -29,15 +29,11 @@ from tempfile import mkdtemp
 from threading import Lock
 
 from worq.pool.thread import WorkerPool
+from worq.tests import TEST_URLS
 
 log = logging.getLogger(__name__)
 
 DEFAULT_TIMEOUT = 10
-
-TEST_URLS = [
-    'memory://',
-    'redis://localhost:16379/0', # NOTE non-standard port
-]
 
 def with_urls(test=None, exclude=None):
     if test is not None:
