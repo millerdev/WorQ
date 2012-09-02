@@ -10,7 +10,7 @@ def setup():
 
 def get_redis_url():
     redis_url = os.environ.get(
-        'WORQ_TEST_REDIS_URL', 'redis://localhost:16379/0')
+        'WORQ_TEST_REDIS_URL', 'redis://localhost:16379/0') # non-standard port
     if redis_url != 'disabled':
         try:
             from worq.queue.redis import TaskQueue as RedisQueue
