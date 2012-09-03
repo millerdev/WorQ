@@ -115,8 +115,8 @@ have checked out the WorQ source code::
 
 The tests for some components (e.g., redis TaskQueue) are disabled unless
 the necessary requirements are available. For example, by default the tests
-look for redis at redis://localhost:16379/0 (note non-standard port; you may
-customize this url with the ``WORQ_TEST_REDIS_URL`` environment variable).
+look for redis at ``redis://localhost:16379/0`` (note non-standard port; you
+may customize this url with the ``WORQ_TEST_REDIS_URL`` environment variable).
 
 
 ==========
