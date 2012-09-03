@@ -145,10 +145,8 @@ def no_such_task(url):
         q = get_queue(url)
 
         res = q.func('arg')
+        assert res.wait(WAIT), repr(res)
 
-        completed = res.wait(WAIT)
-
-        assert completed, repr(res)
         eq_(repr(res), '<Deferred func [default:%s] failed>' % res.id)
         with assert_raises(TaskFailure,
                 'func [default:%s] no such task' % res.id):
@@ -169,9 +167,8 @@ def task_error(url):
         q = get_queue(url)
 
         res = q.func('arg')
-        completed = res.wait(WAIT)
+        assert res.wait(WAIT), repr(res)
 
-        assert completed, repr(res)
         eq_(repr(res), '<Deferred func [default:%s] failed>' % res.id)
         with assert_raises(TaskFailure,
                 'func [default:%s] Exception: fail!' % res.id):
@@ -328,7 +325,7 @@ def task_with_failed_deferred_arguments(url):
         res.wait(timeout=WAIT)
 
         fail = TaskFailure(
-            'func', 'default', res.value[1].task_id, 'Exception: zero fail!')
+            'func', 'default', items[1].id, 'Exception: zero fail!')
         eq_(res.value, [1, fail, 2])
 
 
