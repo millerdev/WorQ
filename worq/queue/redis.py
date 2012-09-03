@@ -1,4 +1,4 @@
-# WorQ - asynchronous Python task queue.
+# WorQ - Python task queue
 #
 # Copyright (c) 2012 Daniel Miller
 #
