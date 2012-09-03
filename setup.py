@@ -10,7 +10,8 @@ setup(
     url='http://worq.readthedocs.org/',
     license='LICENSE.txt',
     description='Python task queue',
-    long_description=open('README.rst').read(),
+    long_description=open('README.rst').read() \
+        .replace(':ref:', ''), # HACK replace so pypi doesn't barf on the reST
     extras_require={
         "redis": "redis >= 2.4",
     },
