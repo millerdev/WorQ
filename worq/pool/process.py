@@ -22,11 +22,12 @@
 
 """Multi-process worker pool
 
-Processes in the worq.pool.process stack:
-    Producer - produces tasks to be executed
-    Queue - message queue and results backend (redis)
-    PoolManager - worker pool manager
-    Worker - does the real work
+Processes in the ``worq.pool.process`` stack:
+
+* Queue - enqueues tasks to be executed
+* Broker - task queue and results backend (redis)
+* WorkerPool - worker pool manager process
+* Worker - worker process, which does the real work
 """
 
 import errno
@@ -98,10 +99,10 @@ class WorkerPool(object):
         """Start the worker pool
 
         :param timeout: Number of seconds to block while waiting for a
-            new task to arrive on the queue. The default is 10 seconds.
-            This timeout value affects pool stop time: a larger value
-            means shutdown may take longer because it may need to wait
-            longer for the consumer thread to complete.
+            new task to arrive on the queue. This timeout value affects
+            pool stop time: a larger value means shutdown may take
+            longer because it may need to wait longer for the consumer
+            thread to complete.
         :param handle_sigterm: If true (the default) setup a signal
             handler and block until the process is signalled. This
             should only be called in the main thread in that case. If
@@ -300,12 +301,12 @@ def run_in_subprocess(_func, *args, **kw):
 
     All arguments to this function must be able to be pickled.
 
-    Use subprocess.Popen rather than multiprocessing.Process because we use
-    threads, which do not play nicely with fork. This was originally written
-    with multiprocessing.Process, which caused in intermittent deadlocks.
-    See http://bugs.python.org/issue6721
+    Use ``subprocess.Popen`` rather than ``multiprocessing.Process``
+    because we use threads, which do not play nicely with ``fork``. This
+    was originally written with ``multiprocessing.Process``, which caused
+    in intermittent deadlocks. See http://bugs.python.org/issue6721
 
-    :returns: A subprocess.Popen object.
+    :returns: A ``PopenProcess`` object.
     """
     prog = 'from worq.pool.process import main; main()'
     # close_fds=True prevents intermittent deadlock in Popen
@@ -343,14 +344,14 @@ def _reduce_connection(conn):
 
     WARNING this puts the current process' authentication key in the data
     to be pickled. Connections pickled with this function should not be
-    sent over a network.
+    sent over an untrusted network.
 
-    HACK work around multiprocessing connection authentication because
-    we are using subprocess.Popen instead of multiprocessing.Process to
-    spawn new child processes.
+    HACK work around ``multiprocessing`` connection authentication because
+    we are using ``subprocess.Popen`` instead of ``multiprocessing.Process``
+    to spawn new child processes.
 
-    This will not be necessary when multiprocessing.Connection objects can be
-    pickled. See http://bugs.python.org/issue4892
+    This will not be necessary when ``multiprocessing.Connection`` objects
+    can be pickled. See http://bugs.python.org/issue4892
     """
     obj = reduce_connection(conn)
     assert obj[0] is rebuild_connection, obj
@@ -364,7 +365,8 @@ def _rebuild_connection(authkey, *args):
 
 
 class PopenProcess(object):
-    """Make a subprocess.Popen object more like multiprocessing.Process"""
+    """Make a ``subprocess.Popen`` object more like ``multiprocessing.Process``
+    """
 
     def __init__(self, proc):
         self._proc = proc

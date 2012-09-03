@@ -1,3 +1,22 @@
+========
+Commands
+========
+
+Build source distribution::
+
+    python setup.py sdist
+    python setup.py sdist upload
+
+Run tests::
+
+    pip install -r requires.txt
+    nosetests
+
+Build documentation::
+
+    cd doc
+    make html
+
 ====
 TODO
 ====

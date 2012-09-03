@@ -30,6 +30,8 @@ try:
 except ImportError:
     RedisQueue = None
 
+__version__ = '1.0.0'
+
 BROKER_REGISTRY = {'memory': MemoryQueue.factory}
 
 if RedisQueue is not None:
@@ -38,10 +40,9 @@ if RedisQueue is not None:
 def get_broker(url, name=DEFAULT, *args, **kw):
     """Create a new broker
 
-    :param url: Message queue and result store URL (this convenience function
-        uses the same URL to construct both).
+    :param url: Task queue URL.
     :param name: The name of the queue on which to expose or invoke tasks.
-        Default value: 'default'.
+    :returns: An instance of ``worq.core.Broker``.
     """
     scheme = urlparse(url).scheme
     try:
@@ -53,12 +54,12 @@ def get_broker(url, name=DEFAULT, *args, **kw):
 def get_queue(url, name=DEFAULT, target=''):
     """Get a queue for invoking remote tasks
 
-    :param url: URL of the task queue.
-    :param queue_name: The name of the queue on which tasks should be invoked.
+    :param url: Task queue URL.
+    :param name: The name of the queue on which tasks should be invoked.
         Queued tasks will be invoked iff there is a worker listening on the
-        named queue. Default value: 'default'.
+        named queue.
     :param target: Task namespace (similar to a python module) or name
-        (similar to a python function). Default to the root namespace ('').
-    :returns: An instance of worq.task.Queue.
+        (similar to a python function). Defaults to the root namespace.
+    :returns: An instance of ``worq.task.Queue``.
     """
     return get_broker(url, name).queue(target)

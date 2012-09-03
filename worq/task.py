@@ -32,7 +32,8 @@ log = logging.getLogger(__name__)
 class Queue(object):
     """Queue for invoking remote tasks
 
-    New Queue instances are generated through attribute access. For example::
+    New ``Queue`` instances are generated through attribute access.
+    For example::
 
         >>> q = Queue(broker)
         >>> q.foo
@@ -40,18 +41,18 @@ class Queue(object):
         >>> q.foo.bar
         <Queue foo.bar [default]>
 
-    A Queue instance can be called like a function, which invokes a remote
-    task identified by the target of the Queue instance. Example::
+    A ``Queue`` instance can be called like a function, which invokes a remote
+    task identified by the target of the ``Queue`` instance. Example::
 
         # Enqueue task 'func' in namespace 'foo' to be invoked
         # by a worker listening on the 'default' queue.
         >>> q = Queue(broker)
         >>> q.foo.func(1, key=None)
 
-    The arrangement of Queue tasks in task spaces is similar to Python's system
-    of defining functions in modules and packages.
+    The arrangement of queue tasks in ``TaskSpaces`` is similar to Python's
+    package/module/function hierarchy.
 
-    NOTE two queue objects are considered equal if they refer to the same
+    NOTE two ``Queue`` objects are considered equal if they refer to the same
     broker (their targets may be different).
     """
 
@@ -65,7 +66,7 @@ class Queue(object):
         return Queue(self.__broker, target)
 
     def __call__(self, *args, **kw):
-        """Invoke the task identified by this Queue"""
+        """Invoke the task identified by this ``Queue``"""
         return Task(self)(*args, **kw)
 
     def __eq__(self, other):
@@ -98,7 +99,7 @@ class Task(object):
     This class can be used to construct a task with custom options.
     A task is invoked by calling the task object.
 
-    :param queue: The Queue object identifying the task to be executed.
+    :param queue: The ``Queue`` object identifying the task to be executed.
     :param id: A unique identifier string for this task, or a function
         that returns a unique identifier string when called with the
         task's arguments. If not specified, a global unique identifier
@@ -111,12 +112,12 @@ class Task(object):
         argument if this value is ``Task.PASS``, otherwise this will
         fail before it is invoked (the default action).
     :param ignore_result: Create a fire-and-forget task if true. Task
-        invocation will return None rather than a Deferred object.
+        invocation will return ``None`` rather than a ``Deferred`` object.
     :param result_timeout: Number of seconds to retain the result after
         the task has completed. The default is one hour. This is ignored
-        by some TaskQueue implementations.
+        by some ``TaskQueue`` implementations.
     :param heartrate: Number of seconds between task heartbeats, which
-        are maintained by some WorkerPool implementations to prevent
+        are maintained by some ``WorkerPool`` implementations to prevent
         result timeout while the task is running. The default is 30
         seconds.
     """
@@ -290,7 +291,7 @@ class Deferred(object):
         Use this method wisely. In general a task should never wait on the
         result of another task because it may cause deadlock.
 
-        :param timeout: Number of seconds to wait. A value of None will wait
+        :param timeout: Number of seconds to wait. A value of ``None`` will wait
             indefinitely, but this is dangerous since the worker may go away
             without notice (due to loss of power, etc.) causing this method
             to deadlock.
@@ -329,6 +330,7 @@ class TaskSpace(object):
         """Add a task to the namespace
 
         This can be used as a decorator::
+
             ts = TaskSpace(__name__)
 
             @ts.task

@@ -34,10 +34,7 @@ log = logging.getLogger(__name__)
 _REFS = WeakValueDictionary()
 
 class TaskQueue(AbstractTaskQueue):
-    """Simple in-memory message queue implementation
-
-    Does not support named queues.
-    """
+    """Simple in-memory task queue implementation"""
 
     @classmethod
     def factory(cls, url, name=const.DEFAULT, *args, **kw):

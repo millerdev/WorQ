@@ -32,9 +32,12 @@ from worq.const import DEFAULT, HOUR, MINUTE, DAY, STATUS_VALUES, TASK_EXPIRED
 from worq.task import (Queue, TaskSpace, FunctionTask, Deferred,
     TaskFailure, TaskExpired)
 
+__all__ = ['Broker', 'AbstractTaskQueue']
+
 log = logging.getLogger(__name__)
 
 class Broker(object):
+    """A Broker controlls all interaction with the queue backend"""
 
     def __init__(self, message_queue):
         self.messages = message_queue
@@ -111,7 +114,7 @@ class Broker(object):
         """Get the next task from the queue.
 
         :param timeout: See ``AbstractTaskQueue.get``.
-        :returns: A task object. None on timeout expiration or if the task
+        :returns: A task object. ``None`` on timeout expiration or if the task
             could not be deserialized.
         """
         message = self.messages.get(timeout=timeout)
@@ -220,7 +223,7 @@ class Broker(object):
             representing the task.
         :param timeout: Length of time to wait for the result. The default
             behavior is to return immediately (no wait). Wait indefinitely
-            if None.
+            if ``None``.
         :returns: The deserialized result object.
         :raises: KeyError if the result was not available.
         :raises: TaskExpired if the task expired before a result was returned.
@@ -250,10 +253,11 @@ class AbstractTaskQueue(object):
     """Message queue abstract base class
 
     Task/result lifecycle
-    1. Atomically store non-expiring result placeholder and enqueue task.
-    2. Atomically pop task from queue and set timeout on result placeholder.
-    3. Task heartbeats extend result expiration as needed.
-    4. Task finishes and result value is saved.
+
+        1. Atomically store non-expiring result placeholder and enqueue task.
+        2. Atomically pop task from queue and set timeout on result placeholder.
+        3. Task heartbeats extend result expiration as needed.
+        4. Task finishes and result value is saved.
 
     All methods must be thread-safe.
 
@@ -301,11 +305,11 @@ class AbstractTaskQueue(object):
         ``worq.const.PROCESSING`` if a result is being maintained for
         the task.
 
-        :param timeout: Number of seconds to wait before returning None if no
-            task is available in the queue. Wait forever if timeout is None
-            (the default value).
-        :returns: A two-tuple (<task_id>, <serialized task message>) or None
-            if timeout was reached before a task arrived.
+        :param timeout: Number of seconds to wait before returning ``None`` if
+            no task is available in the queue. Wait forever if timeout is
+            ``None``.
+        :returns: A two-tuple (<task_id>, <serialized task message>) or
+            ``None`` if timeout was reached before a task arrived.
         """
         raise NotImplementedError('abstract method')
 
@@ -322,7 +326,7 @@ class AbstractTaskQueue(object):
             the reserved result as an argument.
         :returns: A two-tuple: (<bool>, <str>). The first item is a flag
             denoting if the argument was reserved, and the second is
-            the serialized result if it was available else None.
+            the serialized result if it was available else ``None``.
         """
         raise NotImplementedError('abstract method')
 
@@ -358,7 +362,7 @@ class AbstractTaskQueue(object):
         """Get the status of a task
 
         :param task_id: Unique task identifier string.
-        :returns: A serialized task status object or None.
+        :returns: A serialized task status object or ``None``.
         """
         raise NotImplementedError('abstract method')
 
@@ -372,7 +376,7 @@ class AbstractTaskQueue(object):
         :param timeout: Number of seconds to persist the result before
             discarding it.
         :returns: A deferred task identifier if the result has been reserved.
-            Otherwise None.
+            Otherwise ``None``.
         """
         raise NotImplementedError('abstract method')
 
@@ -381,13 +385,15 @@ class AbstractTaskQueue(object):
 
         :param task_id: Unique task identifier string.
         :param timeout: Number of seconds to wait for the result. Wait
-            indefinitely if None. Return immediately if timeout is zero (0).
+            indefinitely if ``None``. Return immediately if timeout is zero (0).
         :returns: One of the following:
+
             * The result message.
-            * ``worq.const.PROMISED`` if another task depends on the result.
+            * ``worq.const.RESERVED`` if another task depends on the result.
             * ``worq.const.TASK_EXPIRED`` if the task expired before a
               result was available.
-            * None on timeout.
+            * ``None`` on timeout.
+
         """
         raise NotImplementedError('abstract method')
 

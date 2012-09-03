@@ -39,12 +39,7 @@ RESULT_PATTERN = 'worq:result:%s:%s'
 
 
 class TaskQueue(AbstractTaskQueue):
-    """Redis message queue
-
-    WARNING this implementation depends on all task ids being unique.
-    Behavior is undefined if two different tasks are submitted with the
-    same task id.
-    """
+    """Redis task queue"""
 
     def __init__(self, url, name=const.DEFAULT, initial_result_timeout=60,
             redis_factory=redis.StrictRedis):

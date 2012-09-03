@@ -99,7 +99,13 @@ And in a second terminal window::
 
     $ python main.py redis://localhost:6379/0
 
-See examples.py for more things that can be done with WorQ.
+See :ref:`examples.py` for more things that can be done with WorQ.
+
+
+Download the source
+===================
+
+Get it on github: https://github.com/millerdev/WorQ/
 
 
 Running the tests
