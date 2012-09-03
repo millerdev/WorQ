@@ -24,9 +24,7 @@ import worq.const as const
 from worq import get_broker, get_queue, Task
 from worq.task import Task, TaskFailure, TaskExpired
 from worq.tests.util import (assert_raises, eq_, eventually, thread_worker,
-    with_urls, TimeoutLock)
-
-WAIT = 60 # default wait time (1 minute)
+    with_urls, TimeoutLock, WAIT)
 
 
 @with_urls

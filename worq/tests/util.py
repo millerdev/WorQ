@@ -33,7 +33,8 @@ from worq.tests import TEST_URLS
 
 log = logging.getLogger(__name__)
 
-DEFAULT_TIMEOUT = 10
+WAIT = 30 # default test timeout (seconds)
+DEFAULT_TIMEOUT = 10 # default utility timeout
 
 def with_urls(test=None, exclude=None):
     if test is not None:

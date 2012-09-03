@@ -32,11 +32,10 @@ from os.path import dirname, exists, join
 from worq import get_broker, get_queue
 from worq.pool.process import WorkerPool, Error, run_in_subprocess
 from worq.task import Task, TaskExpired
-from worq.tests.util import assert_raises, eq_, eventually, tempdir, with_urls
+from worq.tests.util import (assert_raises, eq_, eventually, tempdir,
+    with_urls, WAIT)
 
 log = logging.getLogger(__name__)
-
-WAIT = 60 # default wait timeout (1 minute)
 
 
 @with_urls

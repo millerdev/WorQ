@@ -22,9 +22,7 @@
 
 from worq import get_broker, get_queue, Task, TaskFailure, TaskSpace
 from worq.tests.util import (assert_raises, eq_, eventually, thread_worker,
-    with_urls)
-
-WAIT = 60 # default wait time (1 minute)
+    with_urls, WAIT)
 
 @with_urls
 def test_deferred_task_fail_on_error(url):

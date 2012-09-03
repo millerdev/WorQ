@@ -20,7 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from worq.tests.util import TEST_URLS
+from worq.tests import TEST_URLS
 
 def example(func):
     # test helper
