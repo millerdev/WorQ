@@ -28,6 +28,7 @@ from worq.tests.util import (assert_raises, eq_, eventually,
 
 @example
 def simple(url):
+    """A simple example demonstrating WorQ mechanics"""
     state = []
 
     def func(arg):
@@ -46,55 +47,12 @@ def simple(url):
 
 
 @example
-def expose_method(url):
-
-    class Database(object):
-        """stateful storage"""
-        value = None
-        def update(self, value):
-            self.value = value
-    class TaskObj(object):
-        """object with task definitions"""
-        def __init__(self, db):
-            self.db = db
-        def update_value(self, value):
-            self.db.update(value)
-
-    db = Database()
-    obj = TaskObj(db)
-    broker = get_broker(url)
-    broker.expose(obj.update_value)
-    with thread_worker(broker):
-
-        # -- task-invoking code, usually another process --
-        q = get_queue(url)
-        q.update_value(2)
-        res = Task(q.update_value, ignore_result=True)(2)
-
-        eventually((lambda:db.value), 2)
-        eq_(res, None) # verify that we did not get a deferred result
-
-@example
-def named_queue(url):
-    # named queues facilitate multiple queues on a single backend
-    state = []
-
-    def func(arg):
-        state.append(arg)
-
-    broker = get_broker(url, 'name')
-    broker.expose(func)
-    with thread_worker(broker):
-
-        # -- task-invoking code, usually another process --
-        q = get_queue(url, 'name')
-        q.func(1)
-
-        eventually((lambda:state), [1])
-
-
-@example
 def wait_for_result(url):
+    """Efficiently wait for (block on) a task result.
+
+    Use this feature wisely. Waiting for a result in a WorQ task
+    could deadlock the queue.
+    """
 
     def func(arg):
         return arg
@@ -116,10 +74,38 @@ def wait_for_result(url):
 
 
 @example
+def ignore_result(url):
+    """Tell the queue to ignore the task result when the result is not
+    important. This is done by creating a ``Task`` object with custom
+    options for more efficient queue operation.
+    """
+    state = []
+
+    def func(arg):
+        state.append(arg)
+
+    broker = get_broker(url)
+    broker.expose(func)
+    with thread_worker(broker):
+
+        # -- task-invoking code, usually another process --
+        q = get_queue(url)
+
+        f = Task(q.func, ignore_result=True)
+        res = f(3)
+
+        eq_(res, None) # verify that we did not get a deferred result
+        eventually((lambda:state), [3])
+
+
+@example
 def result_status(url):
-    # NOTE a lock is used to control state interactions between the producer
-    # and the worker for illustration purposes only. This type of lock-step
-    # interaction is not normally needed or even desired.
+    """Deferred results can be queried for task status.
+
+    A lock is used to control state interactions between the producer
+    and the worker for illustration purposes only. This type of
+    lock-step interaction is not normally needed or even desired.
+    """
     lock = TimeoutLock(locked=True)
 
     def func(arg):
@@ -143,11 +129,10 @@ def result_status(url):
         eq_(repr(res), "<Deferred func [default:%s] processing>" % res.id)
 
         lock.release()
-        completed = res.wait(WAIT)
-
-        assert completed, repr(res)
-        eq_(res.value, 'arg')
+        assert res.wait(WAIT), repr(res)
         eq_(repr(res), "<Deferred func [default:%s] success>" % res.id)
+
+        eq_(res.value, 'arg')
 
 
 @example
@@ -167,29 +152,6 @@ def no_such_task(url):
         eq_(repr(res), '<Deferred func [default:%s] failed>' % res.id)
         with assert_raises(TaskFailure,
                 'func [default:%s] no such task' % res.id):
-            res.value
-
-
-@example
-def worker_interrupted(url):
-
-    def func(arg):
-        raise KeyboardInterrupt()
-
-    broker = get_broker(url)
-    broker.expose(func)
-    with thread_worker(broker):
-
-        # -- task-invoking code, usually another process --
-        q = get_queue(url)
-
-        res = q.func('arg')
-        completed = res.wait(WAIT)
-
-        assert completed, repr(res)
-        eq_(repr(res), '<Deferred func [default:%s] failed>' % res.id)
-        with assert_raises(TaskFailure,
-                'func [default:%s] KeyboardInterrupt: ' % res.id):
             res.value
 
 
@@ -218,6 +180,11 @@ def task_error(url):
 
 @example
 def task_with_deferred_arguments(url):
+    """A deferred result may be passed as an argument to another task. Tasks
+    receiving deferred arguments will not be invoked until the deferred value
+    is available. Notice that the value of the deferred argument, not the
+    Deferred object itself, is passed to ``sum`` in this example.
+    """
 
     def func(arg):
         return arg
@@ -329,16 +296,13 @@ def dependency_graph(url):
         })
 
 
-# TODO test pass completed deferred result to task (should work)
-
-
 @example
 def task_with_failed_deferred_arguments(url):
     """TaskFailure can be passed to the final task.
 
     By default, a task fails if any of its deferred arguments fail. However,
-    setting the `on_error=Task.PASS` option will cause a TaskFailure to be
-    passed as the result of any task that fails.
+    creating a ``Task`` with ``on_error=Task.PASS`` will cause a ``TaskFailure``
+    to be passed as the result of any task that fails.
     """
 
     def func(arg):
@@ -353,12 +317,14 @@ def task_with_failed_deferred_arguments(url):
         # -- task-invoking code, usually another process --
         q = get_queue(url)
 
-        task = Task(q.func, on_error=Task.PASS)
-        res = task([
+        items = [
             q.func(1),
             q.func(0),
             q.func(2),
-        ])
+        ]
+
+        task = Task(q.func, on_error=Task.PASS)
+        res = task(items)
         res.wait(timeout=WAIT)
 
         fail = TaskFailure(
@@ -367,7 +333,39 @@ def task_with_failed_deferred_arguments(url):
 
 
 @example
+def named_queue(url):
+    """Named queues facilitate discrete queues on a single backend."""
+
+    foo_state = []
+    def foo_func(arg):
+        foo_state.append(arg)
+    foo_broker = get_broker(url, 'foo')
+    foo_broker.expose(foo_func)
+
+    bar_state = []
+    def bar_func(arg):
+        bar_state.append(arg)
+    bar_broker = get_broker(url, 'bar')
+    bar_broker.expose(bar_func)
+
+    with thread_worker(foo_broker), thread_worker(bar_broker):
+
+        # -- task-invoking code, usually another process --
+        f = get_queue(url, 'foo')
+        f.foo_func(1)
+
+        b = get_queue(url, 'bar')
+        b.bar_func(2)
+
+        eventually((lambda:(foo_state, bar_state)), ([1], [2]))
+
+
+@example
 def task_namespaces(url):
+    """Task namepsaces are used to arrange tasks similar to the Python
+    package/module hierarchy.
+    """
+
     state = set()
     __name__ = 'module.path'
 
@@ -386,10 +384,10 @@ def task_namespaces(url):
     with thread_worker(broker):
 
         # -- task-invoking code, usually another process --
-        q = get_queue(url, target='module.path')
+        q = get_queue(url)
 
-        q.foo()
-        q.bar(1)
+        q.module.path.foo()
+        q.module.path.bar(1)
 
         eventually((lambda:state), {'foo', 1})
 
@@ -438,3 +436,32 @@ def more_namespaces(url):
             'baz-join 3',
             'baz-kick 4',
         })
+
+
+@example
+def expose_method(url):
+    """Object methods can be exposed too, not just functions."""
+
+    class Database(object):
+        """stateful storage"""
+        value = None
+        def update(self, value):
+            self.value = value
+
+    class TaskObj(object):
+        """object with task definitions"""
+        def __init__(self, db):
+            self.db = db
+        def update_value(self, value):
+            self.db.update(value)
+
+    db = Database()
+    obj = TaskObj(db)
+    broker = get_broker(url)
+    broker.expose(obj.update_value)
+    with thread_worker(broker):
+
+        # -- task-invoking code, usually another process --
+        q = get_queue(url)
+        q.update_value(2)
+        eventually((lambda:db.value), 2)

@@ -3,6 +3,7 @@ TODO
 ====
 
 - Deferred.wait should continue waiting if its value is a Deferred
+- Write test that passes completed deferred result to task (should work)
 - Allow tasks to be cancelled
 - Implement "map" and "reduce"
 - Decouple TaskSpace from Broker?

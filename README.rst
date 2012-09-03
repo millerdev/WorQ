@@ -84,7 +84,7 @@ Create the following files.
         # wait for the final result
         result.wait(timeout=30)
 
-        print('1 + 2 + ... + 10 = {}'.format(result.value))
+        print('0 + 1 + ... + 9 = {}'.format(result.value))
 
     if __name__ == '__main__':
         main(sys.argv[-1])

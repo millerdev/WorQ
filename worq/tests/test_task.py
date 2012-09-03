@@ -24,6 +24,30 @@ from worq import get_broker, get_queue, Task, TaskFailure, TaskSpace
 from worq.tests.util import (assert_raises, eq_, eventually, thread_worker,
     with_urls, WAIT)
 
+
+@with_urls
+def test_worker_interrupted(url):
+
+    def func(arg):
+        raise KeyboardInterrupt()
+
+    broker = get_broker(url)
+    broker.expose(func)
+    with thread_worker(broker):
+
+        # -- task-invoking code, usually another process --
+        q = get_queue(url)
+
+        res = q.func('arg')
+        completed = res.wait(WAIT)
+
+        assert completed, repr(res)
+        eq_(repr(res), '<Deferred func [default:%s] failed>' % res.id)
+        with assert_raises(TaskFailure,
+                'func [default:%s] KeyboardInterrupt: ' % res.id):
+            res.value
+
+
 @with_urls
 def test_deferred_task_fail_on_error(url):
 
