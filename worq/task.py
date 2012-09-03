@@ -388,20 +388,3 @@ class TaskFailure(Exception):
 
 
 class TaskExpired(TaskFailure): pass
-
-
-class TaskStatus(object):
-    """Task status value container/marker"""
-
-    def __init__(self, value):
-        self.value = value
-
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-# Internal tasks
-
-worqspace = TaskSpace(__name__)
-
-# TODO remove
-@worqspace.task
-def identity(arg):
-    return arg
