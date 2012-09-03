@@ -45,23 +45,3 @@ def test_deferred_task_fail_on_error(url):
         msg = 'func [default:%s] Exception: zero fail!' % res.task.args[0][1].id
         with assert_raises(TaskFailure, msg):
             res.value
-
-@with_urls
-def test_Deferred_wait_with_status_update(url):
-
-    def func(arg, update_status=None):
-        update_status('running')
-        return arg
-
-    broker = get_broker(url)
-    broker.expose(func)
-    with thread_worker(broker):
-
-        # -- task-invoking code, usually another process --
-        q = get_queue(url)
-
-        task = Task(q.func, update_status=True)
-        res = task(1)
-        res.wait(timeout=WAIT)
-
-        eq_(res.value, 1)

@@ -112,10 +112,6 @@ class Task(object):
         fail before it is invoked (the default action).
     :param ignore_result: Create a fire-and-forget task if true. Task
         invocation will return None rather than a Deferred object.
-    :param update_status: When true, send an extra 'update_status'
-        keyword argument when invoking the task. The 'update_status'
-        argument is a function that can be called to update the status
-        of the task result. This is incompatible with ignore_result.
     :param result_timeout: Number of seconds to retain the result after
         the task has completed. The default is one hour. This is ignored
         by some TaskQueue implementations.
@@ -131,7 +127,6 @@ class Task(object):
     OPTIONS = {
         'on_error': FAIL,
         'ignore_result': False,
-        'update_status': False,
         'result_timeout': HOUR,
         'heartrate': 30,
     }
@@ -140,7 +135,6 @@ class Task(object):
                 id=None,
                 on_error=FAIL,
                 ignore_result=False,
-                update_status=False,
                 result_timeout=HOUR,
                 heartrate=30,
             ):
@@ -157,16 +151,10 @@ class Task(object):
             options['on_error'] = on_error
 
         if ignore_result:
-            if update_status:
-                raise ValueError(
-                    'ignore_result is incompatible with update_status')
             if result_timeout != HOUR:
                 raise ValueError(
                     'ignore_result is incompatible with result_timeout')
             options['ignore_result'] = bool(ignore_result)
-
-        if update_status:
-            options['update_status'] = bool(update_status)
 
         if not isinstance(result_timeout, (int, long, float)):
             raise ValueError('invalid result_timeout: %r' % (result_timeout,))
@@ -222,10 +210,6 @@ class FunctionTask(object):
         queue = broker.name
         log.debug('invoke %s [%s:%s] %s',
             self.name, queue, self.id, self.options)
-        if self.update_status:
-            def update_status(value):
-                broker.set_status(self, value)
-            self.kw['update_status'] = update_status
         try:
             try:
                 task = broker.tasks[self.name]

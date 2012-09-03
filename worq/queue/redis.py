@@ -200,10 +200,6 @@ class TaskQueue(AbstractTaskQueue):
         while deferred_id is not None:
             deferred_id = set_timeout(deferred_id)
 
-    def set_status(self, task_id, message):
-        key = TASK_PATTERN % (self.name, task_id)
-        self.redis.hset(key, 'status', message)
-
     def get_status(self, task_id):
         key = TASK_PATTERN % (self.name, task_id)
         return self.redis.hget(key, 'status')

@@ -3,7 +3,6 @@ TODO
 ====
 
 - process.WorkerPool should work with MemoryQueue (pass results back to pool)
-- ?? Remove status junk (simple to implement externally, adds cruft to task interfaces)
 - Deferred.wait should continue waiting if its value is a Deferred
     - Deferred should be picklable
 - Allow setting custom task id
@@ -19,6 +18,7 @@ TODO
 Completed
 =========
 
+x - Remove update_status; doesn't work with memory.TaskQueue + process.WorkerPool
 x - Task(..., id=function) - function gets same args as task
 x - Remove TaskSet
 x - What happens to TaskSet results when a subtask is not invoked before the

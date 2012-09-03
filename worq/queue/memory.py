@@ -129,11 +129,6 @@ class TaskQueue(AbstractTaskQueue):
     def set_task_timeout(self, task_id, timeout):
         pass
 
-    def set_status(self, task_id, message):
-        result = self.results.get(task_id)
-        if result is not None:
-            result.__status = message
-
     def get_status(self, task_id):
         result = self.results.get(task_id)
         return None if result is None else result.__status

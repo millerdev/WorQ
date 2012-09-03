@@ -97,12 +97,6 @@ class Broker(object):
             log.debug('enqueue %s [%s:%s]', task.name, self.name, task.id)
         return None if task.ignore_result else result
 
-    def set_status(self, task, value):
-        """Set the status of a task"""
-        if value not in STATUS_VALUES:
-            value = self.serialize(value)
-        self.messages.set_status(task.id, value)
-
     def status(self, result):
         """Get the status of a deferred result"""
         message = self.messages.get_status(result.id)
@@ -356,14 +350,6 @@ class AbstractTaskQueue(object):
 
         Recursively set the timeout on the given task and all deferred
         tasks depending on this task's result.
-        """
-        raise NotImplementedError('abstract method')
-
-    def set_status(self, task_id, message):
-        """Set the status of a task
-
-        :param task_id: Unique task identifier string.
-        :param message: A serialized task status value.
         """
         raise NotImplementedError('abstract method')
 

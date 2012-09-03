@@ -116,15 +116,13 @@ def wait_for_result(url):
 
 
 @example
-def update_status(url):
+def result_status(url):
     # NOTE a lock is used to control state interactions between the producer
     # and the worker for illustration purposes only. This type of lock-step
     # interaction is not normally needed or even desired.
     lock = TimeoutLock(locked=True)
 
-    def func(arg, update_status):
-        lock.acquire()
-        update_status([10])
+    def func(arg):
         lock.acquire()
         return arg
 
@@ -135,8 +133,7 @@ def update_status(url):
         # -- task-invoking code, usually another process --
         q = get_queue(url)
 
-        func_task = Task(q.func, update_status=True)
-        res = func_task('arg')
+        res = q.func('arg')
 
         eventually((lambda:res.status), const.ENQUEUED)
         eq_(repr(res), "<Deferred func [default:%s] enqueued>" % res.id)
@@ -144,10 +141,6 @@ def update_status(url):
         lock.release()
         eventually((lambda:res.status), const.PROCESSING)
         eq_(repr(res), "<Deferred func [default:%s] processing>" % res.id)
-
-        lock.release()
-        eventually((lambda:res.status), [10])
-        eq_(repr(res), "<Deferred func [default:%s] [10]>" % res.id)
 
         lock.release()
         completed = res.wait(WAIT)
