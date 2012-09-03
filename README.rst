@@ -9,7 +9,7 @@ that work together:
 * ``TaskQueue``
 * ``WorkerPool``
 
-WorQ ships with a more than one implementation of each of these components.
+WorQ ships with more than one implementation of each of these components.
 
 * ``worq.queue.memory.TaskQueue`` - an in-memory (process local) task queue.
 
@@ -105,9 +105,9 @@ See examples.py for more things that can be done with WorQ.
 Running the tests
 =================
 
-WorQ development is mostly done using TDD. Tests are important to verify the
-code works. You may want to run the tests if you want to contribute to WorQ or
-simply just want to hack. Setup a virtualenv and run these commands where you
+WorQ development is mostly done using TDD. Tests are important to verify that
+new code works. You may want to run the tests if you want to contribute to WorQ
+or simply just want to hack. Setup a virtualenv and run these commands where you
 have checked out the WorQ source code::
 
     $ pip install nose
