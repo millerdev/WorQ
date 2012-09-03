@@ -101,6 +101,24 @@ And in a second terminal window::
 
 See examples.py for more things that can be done with WorQ.
 
+
+Running the tests
+=================
+
+WorQ development is mostly done using TDD. Tests are important to verify the
+code works. You may want to run the tests if you want to contribute to WorQ or
+simply just want to hack. Setup a virtualenv and run these commands where you
+have checked out the WorQ source code::
+
+    $ pip install nose
+    $ nosetests
+
+The tests for some components (e.g., redis TaskQueue) are disabled unless
+the necessary requirements are available. For example, by default the tests
+look for redis at redis://localhost:16379/0 (note non-standard port; you may
+customize this url with the ``WORQ_TEST_REDIS_URL`` environment variable).
+
+
 ==========
 Change Log
 ==========

@@ -67,6 +67,7 @@ class Broker(object):
         self.messages.discard_pending()
 
     def queue(self, target=''):
+        """Get a Queue from the broker"""
         return Queue(self, target)
 
     def enqueue(self, task):
