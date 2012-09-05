@@ -39,14 +39,14 @@ log = logging.getLogger(__name__)
 class Broker(object):
     """A Broker controlls all interaction with the queue backend"""
 
-    def __init__(self, message_queue):
-        self.messages = message_queue
+    def __init__(self, taskqueue):
+        self._queue = taskqueue
         self.tasks = {}
-        self.name = message_queue.name
+        self.name = taskqueue.name
 
     @property
     def url(self):
-        return self.messages.url
+        return self._queue.url
 
     def expose(self, obj, replace=False):
         """Expose a TaskSpace or task callable.
@@ -67,7 +67,7 @@ class Broker(object):
 
     def discard_pending_tasks(self):
         """Discard pending tasks from queue"""
-        self.messages.discard_pending()
+        self._queue.discard_pending()
 
     def queue(self, target=''):
         """Get a Queue from the broker"""
@@ -76,26 +76,26 @@ class Broker(object):
     def enqueue(self, task):
         message, args = self.serialize(task, deferred=True)
         result = Deferred(self, task)
-        store = self.messages
+        queue = self._queue
         if args:
-            if not store.defer_task(result, message, args):
+            if not queue.defer_task(result, message, args):
                 raise TaskFailure(task.name, self.name, task.id,
                     'cannot enqueue task with duplicate id')
             log.debug('defer %s [%s:%s]', task.name, self.name, task.id)
             for arg_id in args:
-                ok, msg = store.reserve_argument(arg_id, task.id)
+                ok, msg = queue.reserve_argument(arg_id, task.id)
                 if not ok:
                     raise TaskFailure(task.name, self.name, task.id,
                         'task [%s:%s] result is not available'
                         % (self.name, arg_id))
                 if msg is not None:
-                    allset = store.set_argument(task.id, arg_id, msg)
+                    allset = queue.set_argument(task.id, arg_id, msg)
                     if allset:
                         log.debug('undefer %s [%s:%s]',
                             task.name, self.name, task.id)
-                        self.messages.undefer_task(task.id)
+                        queue.undefer_task(task.id)
         else:
-            if not store.enqueue_task(result, message):
+            if not queue.enqueue_task(result, message):
                 raise TaskFailure(task.name, self.name, task.id,
                     'cannot enqueue task with duplicate id')
             log.debug('enqueue %s [%s:%s]', task.name, self.name, task.id)
@@ -103,7 +103,7 @@ class Broker(object):
 
     def status(self, result):
         """Get the status of a deferred result"""
-        message = self.messages.get_status(result.id)
+        message = self._queue.get_status(result.id)
         if message is None:
             return message
         if message in STATUS_VALUES:
@@ -117,7 +117,7 @@ class Broker(object):
         :returns: A task object. ``None`` on timeout expiration or if the task
             could not be deserialized.
         """
-        message = self.messages.get(timeout=timeout)
+        message = self._queue.get(timeout=timeout)
         if message is None:
             return message
         task_id, message = message
@@ -137,10 +137,10 @@ class Broker(object):
     def heartbeat(self, task):
         """Extend task result timeout"""
         timeout = task.heartrate * 2 + 5
-        self.messages.set_task_timeout(task.id, timeout)
+        self._queue.set_task_timeout(task.id, timeout)
         taskset_id = task.options.get('taskset_id')
         if taskset_id is not None:
-            self.messages.set_task_timeout(taskset_id, timeout)
+            self._queue.set_task_timeout(taskset_id, timeout)
 
     def serialize(self, obj, deferred=False):
         """Serialize an object
@@ -181,7 +181,7 @@ class Broker(object):
         if task_id is None:
             persistent_load = []
         else:
-            args = self.messages.get_arguments(task_id)
+            args = self._queue.get_arguments(task_id)
             args = {k: loads(v) for k, v in args.items()}
             def persistent_load(arg_id):
                 value = args[arg_id]
@@ -211,12 +211,12 @@ class Broker(object):
             return
         timeout = task.result_timeout
         message = self.serialize(result)
-        reserve_id = self.messages.set_result(task.id, message, timeout)
+        reserve_id = self._queue.set_result(task.id, message, timeout)
         if reserve_id is not None:
-            allset = self.messages.set_argument(reserve_id, task.id, message)
+            allset = self._queue.set_argument(reserve_id, task.id, message)
             if allset:
                 log.debug('undefer [%s:%s]', self.name, reserve_id)
-                self.messages.undefer_task(reserve_id)
+                self._queue.undefer_task(reserve_id)
 
     def pop_result(self, task, timeout=0):
         """Pop and deserialize a task's result object
@@ -234,7 +234,7 @@ class Broker(object):
         """
         if timeout < 0:
             raise ValueError('negative timeout not supported')
-        message = self.messages.pop_result(task.id, timeout)
+        message = self._queue.pop_result(task.id, timeout)
         if message is None:
             raise KeyError(task.id)
         if message is TASK_EXPIRED:
@@ -248,7 +248,7 @@ class Broker(object):
 
     def task_failed(self, task):
         """Signal that the given task has failed."""
-        self.messages.discard_result(task.id, self.serialize(TASK_EXPIRED))
+        self._queue.discard_result(task.id, self.serialize(TASK_EXPIRED))
 
 
 class AbstractTaskQueue(object):
