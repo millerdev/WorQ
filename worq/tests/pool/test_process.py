@@ -287,7 +287,12 @@ def _logging_init(url, _logpath, _init, *args, **kw):
     else:
         # worker was probably orphaned
         sys.exit()
-    return _init(url, *args, **kw)
+    broker = _init(url, *args, **kw)
+    broker.expose(noop)
+    return broker
+
+def noop():
+    pass
 
 def worker_pool(url, init_func, init_args, workers=1):
     process_config(init_args[-1], 'Pool-%s' % os.getpid())
@@ -309,6 +314,8 @@ def start_pool(pool, timeout=1):
             try:
                 yield
             finally:
+                if not pool.broker.url.startswith('memory:'):
+                    pool.broker.queue().noop()
                 pool.stop()
 
 @contextmanager

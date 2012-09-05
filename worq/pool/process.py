@@ -42,7 +42,7 @@ from multiprocessing.process import AuthenticationString
 from multiprocessing.reduction import reduce_connection, rebuild_connection
 from cPickle import dump, load, HIGHEST_PROTOCOL, PicklingError
 from worq import get_broker
-from worq.core import DAY
+from worq.core import DAY, DEFAULT
 from Queue import Empty, Queue as ThreadQueue
 from threading import Thread
 
@@ -71,6 +71,8 @@ class WorkerPool(object):
         value is the number returned by ``multiprocessing.cpu_count``.
     :param max_worker_tasks: Maximum number of tasks to execute on each worker
         before retiring the worker and spawning a new one in its place.
+    :param name: A name for this pool to distinguish its log output from that
+        of other pools running in the same process.
     """
 
     def __init__(self, broker,
@@ -79,6 +81,7 @@ class WorkerPool(object):
             init_kwargs=None,
             workers=None,
             max_worker_tasks=None,
+            name=None,
         ):
         self.broker = broker
         self.init_func = init_func
@@ -91,9 +94,16 @@ class WorkerPool(object):
                 workers = 1
         self.workers = workers
         self.max_worker_tasks = max_worker_tasks
+        if name is None and broker.name != DEFAULT:
+            name = broker.name
+        self.name = name
         self._workers = []
         self._worker_queue = ThreadQueue()
         self._running = False
+
+    def __str__(self):
+        parts = (type(self).__name__, os.getpid(), self.name)
+        return '-'.join(str(p) for p in parts if p)
 
     def start(self, timeout=10, handle_sigterm=True):
         """Start the worker pool
@@ -108,10 +118,11 @@ class WorkerPool(object):
             should only be called in the main thread in that case. If
             false, start workers and a pool manager thread and return.
         """
+        if handle_sigterm:
+            return start_pools(self, timeout=timeout)
         if self._running:
             raise Error('cannot start already running WorkerPool')
         self._running = True
-        log.info('starting worker pool...')
 
         for n in range(self.workers):
             worker = WorkerProxy(
@@ -127,18 +138,7 @@ class WorkerPool(object):
         args = (timeout,)
         self._consumer_thread = Thread(target=self._consume_tasks, args=args)
         self._consumer_thread.start()
-        log.info('WorkerPool-%s started', os.getpid())
-
-        if handle_sigterm:
-            log.info('Press CTRL+C or send SIGTERM to stop')
-            setup_exit_handler()
-            try:
-                # Sleep indefinitely waiting for a signal
-                # to initiate pool shutdown.
-                while True:
-                    time.sleep(DAY)
-            finally:
-                self.stop()
+        log.info('%s started', str(self))
 
     def _consume_tasks(self, timeout):
         get_task = self.broker.next_task
@@ -155,10 +155,10 @@ class WorkerPool(object):
                     continue
                 worker.execute(task, put_worker)
         except Exception:
-            log.error('task consumer crashed', exc_info=True)
-        log.debug('consumer stopped')
+            log.error('%s task consumer crashed', str(self), exc_info=True)
+        log.debug('%s consumer stopped', str(self))
 
-    def stop(self):
+    def stop(self, join=True):
         """Shutdown the pool
 
         This is probably only useful when the pool was started with
@@ -168,19 +168,49 @@ class WorkerPool(object):
             return False
         self._running = False
 
-        log.info('shutting down...')
+        log.info('shutting down %s...', str(self))
         while True:
             try:
                 item = self._worker_queue.get_nowait()
             except Empty:
                 break
         self._worker_queue.put(STOP)
+        for worker in self._workers:
+            worker.stop()
+        if join:
+            self.join()
+        return True
+
+    def join(self):
+        """Wait for pool to stop (call after ``.stop(join=False)``)"""
+        assert not self._running, 'call stop() first'
         self._consumer_thread.join()
         self._worker_queue = ThreadQueue()
         for worker in self._workers:
-            worker.terminate()
-        log.info('worker pool stopped')
-        return True
+            worker.join()
+        log.info('%s stopped', str(self))
+
+
+def start_pools(*pools, **start_kwargs):
+    """Start one or more pools and wait indefinitely for SIGTERM or SIGINT
+
+    This is a blocking call, and should be run in the main thread.
+    """
+    if not pools:
+        raise ValueError('start_pools requires at least 1 argument, got 0')
+    for pool in pools:
+        pool.start(handle_sigterm=False, **start_kwargs)
+    setup_exit_handler()
+    log.info('Press CTRL+C or send SIGTERM to stop')
+    try:
+        # Sleep indefinitely waiting for a signal to initiate pool shutdown.
+        while True:
+            time.sleep(DAY)
+    finally:
+        for pool in pools:
+            pool.stop(join=False)
+        for pool in pools:
+            pool.join()
 
 
 class WorkerProxy(object):
@@ -194,8 +224,10 @@ class WorkerProxy(object):
     def execute(self, task, return_to_pool):
         self.queue.put((task, return_to_pool))
 
-    def terminate(self):
+    def stop(self):
         self.queue.put((STOP, None))
+
+    def join(self):
         self.queue = None
         self.thread.join()
 
