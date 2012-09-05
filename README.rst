@@ -3,8 +3,14 @@
 WorQ - Python task queue
 ========================
 
-WorQ is a task queue library written in Python. There are two main components
-that work together:
+WorQ is a Python task queue that uses a worker pool to execute tasks in
+parallel. Workers can run in a single process, multiple processes on a single
+machine, or many processes on many machines. It ships with two backend options
+(memory and redis) and two worker pool implementations (multi-process and
+threaded). Task results can be monitored, waited on, or passed as arguments to
+another task.
+
+WorQ has two main components:
 
 * ``TaskQueue``
 * ``WorkerPool``
@@ -20,7 +26,10 @@ WorQ ships with more than one implementation of each of these components.
 
 * ``worq.pool.process.WorkerPool`` - a multi-process worker pool.
 
-These components can be mixed and matched to meet various needs.
+These components can be mixed and matched as desired to meet the needs of your
+application. For example, an in-memory task queue can be used with a multi-
+process worker pool to to execute truely concurrent Python tasks on a single
+multi-core machine.
 
 
 An example with Redis and a multi-process worker pool

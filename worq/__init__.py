@@ -30,7 +30,7 @@ try:
 except ImportError:
     RedisQueue = None
 
-__version__ = '1.0.0'
+__version__ = '1.0.1'
 
 BROKER_REGISTRY = {'memory': MemoryQueue.factory}
 
