@@ -207,6 +207,8 @@ class Broker(object):
         :param task: Task object for which to set the result.
         :param result: Result object.
         """
+        if task.ignore_result:
+            return
         timeout = task.result_timeout
         message = self.serialize(result)
         reserve_id = self.messages.set_result(task.id, message, timeout)
