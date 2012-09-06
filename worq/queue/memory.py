@@ -47,10 +47,10 @@ class TaskQueue(AbstractTaskQueue):
         super(TaskQueue, self).__init__(*args, **kw)
         self.queue = Queue()
         self.results = WeakValueDictionary()
-        self.result_lock = Lock()
+        self.results_lock = Lock()
 
     def _init_result(self, result, status, message):
-        with self.result_lock:
+        with self.results_lock:
             if result.id in self.results:
                 return False
             self.results[result.id] = result
@@ -92,12 +92,12 @@ class TaskQueue(AbstractTaskQueue):
         return len(self.results)
 
     def discard_pending(self):
-        while True:
-            try:
-                self.queue.get_nowait()
-            except Empty:
-                break
-        with self.result_lock:
+        with self.results_lock:
+            while True:
+                try:
+                    self.queue.get_nowait()
+                except Empty:
+                    break
             self.results.clear()
 
     def reserve_argument(self, argument_id, deferred_id):
@@ -112,10 +112,15 @@ class TaskQueue(AbstractTaskQueue):
                 message = result.__value.get_nowait()
             except Empty:
                 message = None
+            if message is not None:
+                with self.results_lock:
+                    self.results.pop(argument_id, None)
             return (True, message)
 
     def set_argument(self, task_id, argument_id, message):
         result = self.results[task_id]
+        with self.results_lock:
+            self.results.pop(argument_id, None)
         with result.__lock:
             result.__args[argument_id] = message
             return len(result.__args) == len(result.__refs)
