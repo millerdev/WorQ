@@ -73,6 +73,10 @@ class Broker(object):
         """Get a Queue from the broker"""
         return Queue(self, target)
 
+    def __len__(self):
+        """Return the approximate number of unprocessed tasks in the queue"""
+        return self._queue.size()
+
     def enqueue(self, task):
         message, args = self.serialize(task, deferred=True)
         result = Deferred(self, task)
@@ -313,6 +317,10 @@ class AbstractTaskQueue(object):
         :returns: A two-tuple (<task_id>, <serialized task message>) or
             ``None`` if timeout was reached before a task arrived.
         """
+        raise NotImplementedError('abstract method')
+
+    def size(self):
+        """Return the approximate number of tasks in the queue"""
         raise NotImplementedError('abstract method')
 
     def discard_pending(self):

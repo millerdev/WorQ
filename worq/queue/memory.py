@@ -88,6 +88,9 @@ class TaskQueue(AbstractTaskQueue):
         result.__status = const.PROCESSING
         return result.id, result.__task
 
+    def size(self):
+        return len(self.results)
+
     def discard_pending(self):
         while True:
             try:

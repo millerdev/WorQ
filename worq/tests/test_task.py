@@ -22,7 +22,38 @@
 
 from worq import get_broker, get_queue, Task, TaskFailure, TaskSpace
 from worq.tests.util import (assert_raises, eq_, eventually, thread_worker,
-    with_urls, WAIT)
+    with_urls, WAIT, TimeoutLock)
+
+
+@with_urls
+def test_Queue_len(url):
+    lock = TimeoutLock(locked=True)
+    def func(arg=None):
+        pass
+    broker = get_broker(url)
+    broker.expose(func)
+    with thread_worker(broker, lock):
+        q = get_queue(url)
+        eq_(len(q), 0)
+
+        r0 = q.func()
+        eq_(len(q), 1)
+
+        r1 = q.func()
+        r2 = q.func(r1)
+        eq_(len(q), 3)
+
+        lock.release()
+        assert r0.wait(timeout=WAIT), repr(res)
+        eq_(len(q), 2)
+
+        lock.release()
+        assert r1.wait(timeout=WAIT), repr(res)
+        eq_(len(q), 1)
+
+        lock.release()
+        assert r2.wait(timeout=WAIT), repr(res)
+        eq_(len(q), 0)
 
 
 @with_urls

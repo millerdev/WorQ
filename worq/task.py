@@ -80,6 +80,10 @@ class Queue(object):
     def __repr__(self):
         return '<Queue %s [%s]>' % (self.__target, self.__broker.name)
 
+    def __len__(self):
+        """Return the approximate number of unprocessed tasks in the queue"""
+        return len(self.__broker)
+
     def __str__(self):
         return self.__target
 
