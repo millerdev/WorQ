@@ -86,12 +86,15 @@ class Broker(object):
                 raise TaskFailure(task.name, self.name, task.id,
                     'cannot enqueue task with duplicate id')
             log.debug('defer %s [%s:%s]', task.name, self.name, task.id)
-            for arg_id in args:
-                ok, msg = queue.reserve_argument(arg_id, task.id)
-                if not ok:
-                    raise TaskFailure(task.name, self.name, task.id,
-                        'task [%s:%s] result is not available'
-                        % (self.name, arg_id))
+            for arg_id, arg in args.items():
+                if arg.has_value():
+                    msg = self.serialize(arg.value)
+                else:
+                    ok, msg = queue.reserve_argument(arg_id, task.id)
+                    if not ok:
+                        raise TaskFailure(task.name, self.name, task.id,
+                            'task [%s:%s] result is not available'
+                            % (self.name, arg_id))
                 if msg is not None:
                     allset = queue.set_argument(task.id, arg_id, msg)
                     if allset:
@@ -155,10 +158,10 @@ class Broker(object):
             When this is false Deferred objects are not serializable.
         """
         if deferred:
-            args = set()
+            args = {}
             def persistent_id(obj):
                 if isinstance(obj, Deferred):
-                    args.add(obj.id)
+                    args[obj.id] = obj
                     return obj.id
                 return None
         else:

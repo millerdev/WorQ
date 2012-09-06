@@ -45,15 +45,35 @@ def test_Queue_len(url):
 
         eventually((lambda:lock.locked), True)
         lock.release()
-        assert r0.wait(timeout=WAIT), repr(res)
+        assert r0.wait(timeout=WAIT), repr(r0)
         eq_(len(q), 2)
 
         eventually((lambda:lock.locked), True)
         lock.release()
         eventually((lambda:lock.locked), True)
         lock.release()
-        assert r2.wait(timeout=WAIT), repr(res)
+        assert r2.wait(timeout=WAIT), repr(r2)
         eq_(len(q), 0)
+
+
+@with_urls
+def test_completed_Deferred_as_argument(url):
+    def func(arg):
+        eq_(arg, 1)
+        return arg
+    broker = get_broker(url)
+    broker.expose(func)
+    with thread_worker(broker):
+        q = get_queue(url)
+        eq_(len(q), 0)
+
+        r0 = q.func(1)
+        assert r0.wait(timeout=WAIT), repr(r0)
+        eq_(r0.value, 1)
+
+        r1 = q.func(r0)
+        assert r1.wait(timeout=WAIT), repr(r1)
+        eq_(r0.value, 1)
 
 
 @with_urls

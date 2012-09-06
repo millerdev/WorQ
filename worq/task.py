@@ -277,6 +277,10 @@ class Deferred(object):
             raise value
         return value
 
+    def has_value(self):
+        """Check for value without touching the broker"""
+        return hasattr(self, '_value')
+
     @property
     def status(self):
         """Get task status"""

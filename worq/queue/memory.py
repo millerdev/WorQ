@@ -72,7 +72,7 @@ class TaskQueue(AbstractTaskQueue):
         if self._init_result(result, const.PENDING, message):
             results = self.results
             # keep references to results to prevent GC
-            result.__refs = [results[arg] for arg in args]
+            result.__refs = [results.get(arg) for arg in args]
             return True
         return False
 
