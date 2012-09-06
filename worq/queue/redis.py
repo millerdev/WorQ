@@ -141,18 +141,13 @@ class TaskQueue(AbstractTaskQueue):
                     return None
 
     def size(self):
-        """Return the approximate number of tasks in the queue
-
-        The complexity of this command is O(n). Calling it may severely
-        impact performance.
-        """
-        pattern = TASK_PATTERN % (self.name, '*')
-        keys = self.redis.keys(pattern)
-        with self.redis.pipeline() as pipe:
-            for key in keys:
-                pipe.hget(key, 'status')
-            done = [const.COMPLETED, const.PROCESSING]
-            return sum((1 for s in pipe.execute() if s not in done))
+        tasks = self.redis.lrange(self.queue_key, 0, -1)
+        num = len(tasks)
+        while tasks:
+            keys = (RESERVE_PATTERN % (self.name, t) for t in tasks)
+            tasks = [t for t in self.redis.mget(keys) if t is not None]
+            num += len(tasks)
+        return num
 
     def discard_pending(self):
         with self.redis.pipeline() as pipe:
