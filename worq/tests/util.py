@@ -74,19 +74,26 @@ def thread_worker(broker, lock=None, timeout=1):
             broker.discard_pending_tasks()
 
 class TimeoutLock(object):
-    """A lock with acquisition timeout; initially locked by default."""
+    """A lock with acquisition timeout"""
     def __init__(self, locked=False):
         self.lock = Lock()
-        if locked:
-            self.lock.acquire()
+        self.mutex = Lock()
+        with self.mutex:
+            if locked:
+                self.lock.acquire()
+            self.locked = locked
     def acquire(self, timeout=DEFAULT_TIMEOUT):
         end = time.time() + timeout
         while time.time() < end:
-            if self.lock.acquire(False):
-                return
+            with self.mutex:
+                if self.lock.acquire(False):
+                    self.locked = True
+                    return
         raise Exception('lock timeout')
     def release(self):
-        self.lock.release()
+        with self.mutex:
+            self.lock.release()
+            self.locked = False
 
 def eventually(get_value, expect, timeout=DEFAULT_TIMEOUT, poll_interval=0):
     end = time.time() + timeout

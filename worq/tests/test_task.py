@@ -43,14 +43,14 @@ def test_Queue_len(url):
         r2 = q.func(r1)
         eq_(len(q), 3)
 
+        eventually((lambda:lock.locked), True)
         lock.release()
         assert r0.wait(timeout=WAIT), repr(res)
         eq_(len(q), 2)
 
+        eventually((lambda:lock.locked), True)
         lock.release()
-        assert r1.wait(timeout=WAIT), repr(res)
-        eq_(len(q), 1)
-
+        eventually((lambda:lock.locked), True)
         lock.release()
         assert r2.wait(timeout=WAIT), repr(res)
         eq_(len(q), 0)
