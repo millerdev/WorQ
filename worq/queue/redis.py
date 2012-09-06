@@ -63,6 +63,16 @@ class TaskQueue(AbstractTaskQueue):
     def ping(self):
         return self.redis.ping()
 
+    def log_all_worq(self, show_expiring=False):
+        """debugging helper"""
+        for key in self.redis.keys('worq:*'):
+            ttl = self.redis.ttl(key)
+            if ttl < 0 or show_expiring:
+                if key.startswith(('worq:task:', 'worq:args:')):
+                    log.debug('%s %s %s', key, ttl, self.redis.hgetall(key))
+                else:
+                    log.debug('%s %s', key, ttl)
+
     def enqueue_task(self, result, message):
         task_key = TASK_PATTERN % (self.name, result.id)
         args_key = ARGS_PATTERN % (self.name, result.id)
@@ -100,7 +110,7 @@ class TaskQueue(AbstractTaskQueue):
                     'task': message,
                     'status': const.PENDING,
                     'total_args': len(args),
-                    #'args_ready': 0, zero by default
+                    #'args_ready': 0, # zero by default
                 })
                 pipe.delete(args_key, result_key, reserve_key)
                 pipe.execute()
@@ -172,25 +182,17 @@ class TaskQueue(AbstractTaskQueue):
     def reserve_argument(self, argument_id, deferred_id):
         reserve_key = RESERVE_PATTERN % (self.name, argument_id)
         result_key = RESULT_PATTERN % (self.name, argument_id)
-        try:
-            with self.redis.pipeline() as pipe:
-                pipe.watch(reserve_key)
-                value = pipe.get(reserve_key)
-                if value is not None:
-                    return (False, None)
-                pipe.multi()
-                pipe.set(reserve_key, deferred_id)
-                pipe.lpop(result_key)
-                result = pipe.execute()[-1]
-            if result is not None:
+        if self.redis.setnx(reserve_key, deferred_id):
+            value = self.redis.lpop(result_key)
+            if value is not None:
                 self.redis.delete(
                     TASK_PATTERN % (self.name, argument_id),
                     ARGS_PATTERN % (self.name, argument_id),
+                    result_key,
                     reserve_key,
                 )
-            return (True, result)
-        except redis.WatchError:
-            return (False, None)
+            return (True, value)
+        return (False, None)
 
     def set_argument(self, task_id, argument_id, message):
         task_key = TASK_PATTERN % (self.name, task_id)
