@@ -141,6 +141,7 @@ Change Log
 v1.0.1, 2012-09-05
   - Better support for managing more than one process.WorkerPool with a single
     pool manager process.
+  - Queue can be created with default task options.
   - Can now check the approximate number of tasks in the queue with len(queue).
   - Allow passing a completed Deferred as an argument to another task.
   - Fix redis leaks.

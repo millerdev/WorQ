@@ -57,6 +57,25 @@ def test_Queue_len(url):
 
 
 @with_urls
+def test_Queue_default_options(url):
+    def func(arg=3):
+        if isinstance(arg, int) and arg < 2:
+            raise ValueError('too low')
+        return str(arg)
+    broker = get_broker(url)
+    broker.expose(func)
+    with thread_worker(broker):
+        q = get_queue(url, ignore_result=True)
+        eq_(q.func(), None)
+
+        q = get_queue(url, on_error=Task.PASS)
+        rx = q.func(1)
+        res = q.func(rx)
+        assert res.wait(WAIT), repr(res)
+        eq_(res.value, 'func [default:%s] ValueError: too low' % rx.id)
+
+
+@with_urls
 def test_completed_Deferred_as_argument(url):
     def func(arg):
         eq_(arg, 1)

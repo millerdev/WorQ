@@ -69,9 +69,9 @@ class Broker(object):
         """Discard pending tasks from queue"""
         self._queue.discard_pending()
 
-    def queue(self, target=''):
+    def queue(self, target='', **options):
         """Get a Queue from the broker"""
-        return Queue(self, target)
+        return Queue(self, target, **options)
 
     def __len__(self):
         """Return the approximate number of unprocessed tasks in the queue"""

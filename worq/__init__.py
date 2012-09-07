@@ -51,7 +51,7 @@ def get_broker(url, name=DEFAULT, *args, **kw):
         raise ValueError('invalid broker URL: %s' % url)
     return Broker(factory(url, name, *args, **kw))
 
-def get_queue(url, name=DEFAULT, target=''):
+def get_queue(url, name=DEFAULT, target='', **options):
     """Get a queue for invoking remote tasks
 
     :param url: Task queue URL.
@@ -60,6 +60,8 @@ def get_queue(url, name=DEFAULT, target=''):
         named queue.
     :param target: Task namespace (similar to a python module) or name
         (similar to a python function). Defaults to the root namespace.
+    :param **options: Default task options for tasks created with the queue.
+        These can be overridden with ``worq.task.Task``.
     :returns: An instance of ``worq.task.Queue``.
     """
-    return get_broker(url, name).queue(target)
+    return get_broker(url, name).queue(target, **options)

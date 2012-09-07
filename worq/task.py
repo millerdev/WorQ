@@ -54,20 +54,25 @@ class Queue(object):
 
     NOTE two ``Queue`` objects are considered equal if they refer to the same
     broker (their targets may be different).
+
+    :param broker: A ``Broker`` instance.
+    :param target: The task (space) path.
+    :param **options: Default task options.
     """
 
-    def __init__(self, broker, target=''):
+    def __init__(self, broker, target='', **options):
         self.__broker = broker
         self.__target = target
+        self.__options = options
 
     def __getattr__(self, target):
         if self.__target:
             target = '%s.%s' % (self.__target, target)
-        return Queue(self.__broker, target)
+        return Queue(self.__broker, target, **self.__options)
 
     def __call__(self, *args, **kw):
         """Invoke the task identified by this ``Queue``"""
-        return Task(self)(*args, **kw)
+        return Task(self, **self.__options)(*args, **kw)
 
     def __eq__(self, other):
         if not isinstance(other, type(self)):
