@@ -92,6 +92,12 @@ class Queue(object):
     def __str__(self):
         return self.__target
 
+    def __delitem__(self, key):
+        if not (isinstance(key, slice)
+                and (key.start, key.stop, key.step) == (None, None, None)):
+            raise ValueError('delitem is only valid with a full slice ([:])')
+        self.__broker.discard_pending_tasks()
+
 
 def option_descriptors(cls):
     def make_getter(name, default):

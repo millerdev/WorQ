@@ -138,6 +138,8 @@ may customize this url with the ``WORQ_TEST_REDIS_URL`` environment variable).
 Change Log
 ==========
 
+v1.0.2, 2012-09-07
+  - Allow clearing entire Queue with ``del queue[:]``.
 v1.0.1, 2012-09-06
   - Better support for managing more than one process.WorkerPool with a single
     pool manager process.

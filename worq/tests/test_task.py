@@ -57,6 +57,23 @@ def test_Queue_len(url):
 
 
 @with_urls
+def test_clear_Queue(url):
+    q = get_queue(url)
+    eq_(len(q), 0)
+
+    q.func()
+    q.func()
+    eq_(len(q), 2)
+
+    del q[:]
+    eq_(len(q), 0)
+
+    msg = 'delitem is only valid with a full slice ([:])'
+    with assert_raises(ValueError, msg=msg):
+        del q[:2]
+
+
+@with_urls
 def test_Queue_default_options(url):
     def func(arg=3):
         if isinstance(arg, int) and arg < 2:
