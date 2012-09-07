@@ -69,6 +69,8 @@ class WorkerPool(object):
             other worker pools consuming tasks from the broker.
         :param join: Join each thread afer sending the stop signal.
         """
+        if self.stop_event.is_set():
+            return
         self.stop_event.set()
         if use_sentinel:
             q = self.broker.queue(__name__)
