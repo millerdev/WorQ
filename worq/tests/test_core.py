@@ -21,8 +21,8 @@
 # SOFTWARE.
 
 import worq.const as const
-from worq import get_broker, get_queue, Task
-from worq.task import Task, TaskFailure, TaskExpired
+from worq import get_broker, get_queue
+from worq.task import DuplicateTask, Task, TaskExpired, TaskFailure
 from worq.tests.util import (assert_raises, eq_, eventually, thread_worker,
     with_urls, TimeoutLock, WAIT)
 
@@ -72,13 +72,13 @@ def Broker_duplicate_task_id(url, identifier):
 
         eventually((lambda:res.status), const.ENQUEUED)
         msg = 'func [default:int] cannot enqueue task with duplicate id'
-        with assert_raises(TaskFailure, msg):
+        with assert_raises(DuplicateTask, msg):
             task(2)
 
         lock.release()
         eventually((lambda:res.status), const.PROCESSING)
         msg = 'func [default:int] cannot enqueue task with duplicate id'
-        with assert_raises(TaskFailure, msg):
+        with assert_raises(DuplicateTask, msg):
             task(3)
 
         lock.release()

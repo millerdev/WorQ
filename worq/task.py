@@ -409,3 +409,5 @@ class TaskFailure(Exception):
 
 
 class TaskExpired(TaskFailure): pass
+
+class DuplicateTask(TaskFailure): pass

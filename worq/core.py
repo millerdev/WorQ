@@ -30,7 +30,7 @@ from weakref import ref as weakref
 
 from worq.const import DEFAULT, HOUR, MINUTE, DAY, STATUS_VALUES, TASK_EXPIRED
 from worq.task import (Queue, TaskSpace, FunctionTask, Deferred,
-    TaskFailure, TaskExpired)
+    TaskFailure, TaskExpired, DuplicateTask)
 
 __all__ = ['Broker', 'AbstractTaskQueue']
 
@@ -83,7 +83,7 @@ class Broker(object):
         queue = self._queue
         if args:
             if not queue.defer_task(result, message, args):
-                raise TaskFailure(task.name, self.name, task.id,
+                raise DuplicateTask(task.name, self.name, task.id,
                     'cannot enqueue task with duplicate id')
             log.debug('defer %s [%s:%s]', task.name, self.name, task.id)
             for arg_id, arg in args.items():
@@ -103,7 +103,7 @@ class Broker(object):
                         queue.undefer_task(task.id)
         else:
             if not queue.enqueue_task(result, message):
-                raise TaskFailure(task.name, self.name, task.id,
+                raise DuplicateTask(task.name, self.name, task.id,
                     'cannot enqueue task with duplicate id')
             log.debug('enqueue %s [%s:%s]', task.name, self.name, task.id)
         return None if task.ignore_result else result

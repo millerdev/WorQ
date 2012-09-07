@@ -140,6 +140,10 @@ Change Log
 
 v1.0.2, 2012-09-07
   - Allow clearing entire Queue with ``del queue[:]``.
+  - Raise ``DuplicateTask`` (rather than the more generic ``TaskFailure``) when
+    trying to enqueue a task with an id matching that of another task in the
+    queue.
+
 v1.0.1, 2012-09-06
   - Better support for managing more than one process.WorkerPool with a single
     pool manager process.
