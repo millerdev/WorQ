@@ -4,9 +4,9 @@
 .. include:: ../README.rst
 
 
-========
-Contents
-========
+=================
+API Documentation
+=================
 
 .. toctree::
    :maxdepth: 4

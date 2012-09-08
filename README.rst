@@ -111,10 +111,12 @@ And in a second terminal window::
 See :ref:`examples.py` for more things that can be done with WorQ.
 
 
-Download the source
-===================
+Links
+=====
 
-Get it on github: https://github.com/millerdev/WorQ/
+* Documentation: http://worq.readthedocs.org/
+* Source: https://github.com/millerdev/WorQ/
+* PyPI: http://pypi.python.org/pypi/WorQ
 
 
 Running the tests
