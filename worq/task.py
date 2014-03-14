@@ -27,6 +27,12 @@ from uuid import uuid4
 from worq.const import HOUR, DEFAULT
 
 log = logging.getLogger(__name__)
+try:
+    _number = (int, long, float)
+except NameError:
+    # Python 3 compat
+    _number = (int, float)
+    basestring = str
 
 
 class Queue(object):
@@ -102,7 +108,7 @@ class Queue(object):
 def option_descriptors(cls):
     def make_getter(name, default):
         return lambda self: self.options.get(name, default)
-    for name, default in cls.OPTIONS.iteritems():
+    for name, default in cls.OPTIONS.items():
         fget = make_getter(name, default)
         setattr(cls, name, property(fget))
     return cls
@@ -172,12 +178,12 @@ class Task(object):
                     'ignore_result is incompatible with result_timeout')
             options['ignore_result'] = bool(ignore_result)
 
-        if not isinstance(result_timeout, (int, long, float)):
+        if not isinstance(result_timeout, _number):
             raise ValueError('invalid result_timeout: %r' % (result_timeout,))
         if result_timeout != HOUR:
             options['result_timeout'] = result_timeout
 
-        if not isinstance(heartrate, (int, long, float)):
+        if not isinstance(heartrate, _number):
             raise ValueError('invalid heartrate: %r' % (heartrate,))
         if heartrate != 30:
             options['heartrate'] = heartrate
@@ -234,12 +240,12 @@ class FunctionTask(object):
                 log.error(result)
             else:
                 result = task(*self.args, **self.kw)
-        except Exception, err:
+        except Exception as err:
             log.error('task failed: %s [%s:%s]',
                 self.name, queue, self.id, exc_info=True)
             result = TaskFailure(self.name, queue, self.id,
                 '%s: %s' % (type(err).__name__, err))
-        except BaseException, err:
+        except BaseException as err:
             log.error('worker died in task: %s [%s:%s]',
                 self.name, queue, self.id, exc_info=True)
             result = TaskFailure(self.name, queue, self.id,
@@ -321,14 +327,16 @@ class Deferred(object):
                 value = self.broker.pop_result(self, timeout=timeout)
             except KeyError:
                 return False
-            except TaskExpired, err:
+            except TaskExpired as err:
                 value = err
             self._value = value
         return hasattr(self, '_value')
 
-    def __nonzero__(self):
+    def __bool__(self):
         """Return True if the result has arrived, otherwise False."""
         return self.wait(0)
+
+    __nonzero__ = __bool__ # Python 2 compat
 
     def __repr__(self):
         status = self.status

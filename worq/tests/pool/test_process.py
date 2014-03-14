@@ -89,7 +89,7 @@ def test_WorkerPool_heartrate(url):
 
         res = Task(q.suicide_worker, heartrate=0.1, result_timeout=5)()
         assert res.wait(WAIT), repr(res)
-        print repr(res)
+        print(repr(res))
         with assert_raises(TaskExpired):
             res.value
 
@@ -277,9 +277,9 @@ def printlog(logpath, heading='pool logging output:'):
         yield
     finally:
         if exists(logpath):
-            print heading
+            print(heading)
             with open(logpath) as f:
-                print f.read(),
+                sys.stdout.write(f.read())
 
 def _logging_init(url, _logpath, _init, *args, **kw):
     if exists(dirname(_logpath)):

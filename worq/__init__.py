@@ -21,7 +21,10 @@
 # SOFTWARE.
 
 from __future__ import absolute_import
-from urlparse import urlparse
+try:
+    from urlparse import urlparse
+except ImportError:
+    from urllib.parse import urlparse
 from worq.core import DEFAULT, Broker
 from worq.task import DuplicateTask, Task, TaskExpired, TaskFailure, TaskSpace
 from worq.queue.memory import TaskQueue as MemoryQueue

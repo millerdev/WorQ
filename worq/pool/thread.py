@@ -55,7 +55,7 @@ class WorkerPool(object):
             checking if the pool has been asked to stop.
         """
         self.stop_event.clear()
-        for ident in xrange(self.workers):
+        for ident in range(self.workers):
             args = (ident, self.broker, timeout, self.stop_event)
             thread = self.thread_factory(target=worker, args=args)
             thread.start()

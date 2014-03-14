@@ -40,11 +40,15 @@ from functools import partial
 from multiprocessing import Pipe, cpu_count, current_process
 from multiprocessing.process import AuthenticationString
 from multiprocessing.reduction import reduce_connection, rebuild_connection
-from cPickle import dump, load, HIGHEST_PROTOCOL, PicklingError
+try:
+    from cPickle import dump, load, HIGHEST_PROTOCOL, PicklingError
+    from Queue import Empty, Queue as ThreadQueue
+except ImportError:
+    from pickle import dump, load, HIGHEST_PROTOCOL, PicklingError
+    from queue import Empty, Queue as ThreadQueue
+from threading import Thread
 from worq import get_broker
 from worq.core import DAY, DEFAULT
-from Queue import Empty, Queue as ThreadQueue
-from threading import Thread
 
 log = logging.getLogger(__name__)
 
@@ -345,6 +349,7 @@ def run_in_subprocess(_func, *args, **kw):
     # See http://bugs.python.org/issue2320
     proc = subprocess.Popen([PYTHON_EXE, '-c', prog],
                             stdin=subprocess.PIPE, close_fds=True,
+                            universal_newlines=False,
                             preexec_fn=disable_signal_propagation)
     assert proc.stdout is None
     assert proc.stderr is None
@@ -363,7 +368,7 @@ def run_in_subprocess(_func, *args, **kw):
 
 
 def main():
-    func, args, kw = load(sys.stdin)
+    func, args, kw = load(get_stdin(sys))
     try:
         func(*args, **kw)
     except Exception:
@@ -440,3 +445,13 @@ def setup_exit_handler():
         import signal
         signal.signal(signal.SIGINT, on_exit)
         signal.signal(signal.SIGTERM, on_exit)
+
+
+try:
+    import cPickle # fails in Python 3
+except ImportError:
+    def get_stdin(obj):
+        return obj.stdin.buffer
+else:
+    def get_stdin(obj):
+        return obj.stdin

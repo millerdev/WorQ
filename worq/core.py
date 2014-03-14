@@ -22,9 +22,14 @@
 
 import logging
 from collections import defaultdict
-from cPickle import (Pickler, PicklingError, Unpickler, UnpicklingError, loads,
-    HIGHEST_PROTOCOL)
-from cStringIO import StringIO
+try:
+    from cPickle import (Pickler, PicklingError, Unpickler, UnpicklingError, loads,
+        HIGHEST_PROTOCOL)
+    from cStringIO import StringIO
+except ImportError:
+    from pickle import (Pickler, PicklingError, Unpickler, UnpicklingError, loads,
+        HIGHEST_PROTOCOL)
+    from io import BytesIO as StringIO
 from uuid import uuid4
 from weakref import ref as weakref
 
@@ -60,7 +65,7 @@ class Broker(object):
         else:
             space = TaskSpace()
             space.task(obj)
-        for name, func in space.tasks.iteritems():
+        for name, func in space.tasks.items():
             if name in self.tasks and not replace:
                 raise ValueError('task %r conflicts with existing task' % name)
             self.tasks[name] = func
@@ -186,7 +191,9 @@ class Broker(object):
         """
         fail = []
         if task_id is None:
-            persistent_load = []
+            def persistent_load(task_id):
+                raise UnpicklingError('message contained references to '
+                    'external objects: %s', persistent_load)
         else:
             args = self._queue.get_arguments(task_id)
             args = {k: loads(v) for k, v in args.items()}
@@ -199,9 +206,6 @@ class Broker(object):
         pickle = Unpickler(data)
         pickle.persistent_load = persistent_load
         obj = pickle.load()
-        if task_id is None and persistent_load:
-            raise UnpicklingError('message contained references to '
-                'external objects: %s', persistent_load)
         if fail and not obj.on_error_pass:
             # TODO detect errors earlier, fail earlier, cancel enqueued tasks
             self.set_result(obj, fail[0])

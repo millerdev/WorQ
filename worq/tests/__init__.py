@@ -1,4 +1,5 @@
 import os
+from nose.plugins.skip import SkipTest
 
 TEST_URLS = ['memory://']
 
@@ -13,10 +14,11 @@ def get_redis_url():
         'WORQ_TEST_REDIS_URL', 'redis://localhost:16379/0') # non-standard port
     if redis_url != 'disabled':
         try:
-            from worq.queue.redis import TaskQueue as RedisQueue
+            import redis
         except ImportError:
             pass
         else:
+            from worq.queue.redis import TaskQueue as RedisQueue
             try:
                 queue = RedisQueue(redis_url)
                 if queue.ping():
@@ -26,8 +28,11 @@ def get_redis_url():
     return None
 
 def test_redis_should_be_installed():
-    if 'WORQ_TEST_REDIS_URL' in os.environ:
-        try:
-            import redis
-        except ImportError:
+    try:
+        import redis
+    except ImportError:
+        if 'WORQ_TEST_REDIS_URL' in os.environ:
             assert 0, 'WORQ_TEST_REDIS_URL is set but redis is not installed'
+        else:
+            raise SkipTest(
+                'cannot test redis task queue because redis is not installed')

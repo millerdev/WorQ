@@ -31,6 +31,12 @@ from threading import Lock
 from worq.pool.thread import WorkerPool
 from worq.tests import TEST_URLS
 
+try:
+    basestring
+except NameError:
+    # Python 3 compat
+    basestring = str
+
 log = logging.getLogger(__name__)
 
 WAIT = 30 # default test timeout (seconds)
