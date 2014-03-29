@@ -65,10 +65,11 @@ Create the following files.
     from worq.pool.process import WorkerPool
     from tasks import init
 
-    def main(url):
+    def main(url, **kw):
         broker = init(url)
         pool = WorkerPool(broker, init, workers=2)
-        pool.start()
+        pool.start(**kw)
+        return pool
 
     if __name__ == '__main__':
         main(sys.argv[-1])
@@ -108,6 +109,35 @@ And in a second terminal window::
 
     $ python main.py redis://localhost:6379/0
 
+Tasks may also be queued in in memory rather than using Redis. In this case
+the queue must reside in the same process that initiates tasks, but the work
+can still be done in separate processes. For example:
+
+
+Example with memory queue and a multi-process worker pool
+=========================================================
+
+In addition to the three files from the previous example, create the following:
+
+``mem.py``::
+
+    #!/usr/bin/env python
+    import main
+    import pool
+
+    if __name__ == "__main__":
+        url = "memory://"
+        p = pool.main(url, timeout=2, handle_sigterm=False)
+        try:
+            main.main(url)
+        finally:
+            p.stop()
+
+Then, in a terminal window::
+
+    $ python mem.py
+
+
 See :ref:`examples.py` for more things that can be done with WorQ.
 
 
@@ -139,6 +169,9 @@ may customize this url with the ``WORQ_TEST_REDIS_URL`` environment variable).
 ==========
 Change Log
 ==========
+
+v1.1.1, ??
+  - Add example using memory queue
 
 v1.1.0, 2014-03-29
   - Add support for Python 3
