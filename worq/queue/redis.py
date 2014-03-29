@@ -24,25 +24,27 @@
 from __future__ import absolute_import
 import logging
 import redis
+import sys
 import time
 import worq.const as const
-from urlparse import urlparse
+try:
+    from urlparse import urlparse
+except ImportError:
+    from urllib.parse import urlparse
 from worq.core import AbstractTaskQueue
 
 log = logging.getLogger(__name__)
 
-QUEUE_PATTERN = 'worq:queue:%s'
-TASK_PATTERN = 'worq:task:%s:%s'
-RESULT_PATTERN = 'worq:result:%s:%s'
-
-# args (for task_id) is a hash: result_id -> value
-# each deferred and enqueued task may have an args key
-ARGS_PATTERN = 'worq:args:%s:%s'
-
-# reserve result_id (key) for deferred task_id (string value)
-# each deferred and enqueued task may have a reserved key
-RESERVE_PATTERN = 'worq:reserved:%s:%s'
-
+if sys.version_info.major < 3:
+    integer = (int, long)
+    def utf8(value):
+        return value
+else:
+    integer = int
+    def utf8(value):
+        return value.encode('utf-8')
+    def unicode(value):
+        return value.decode('utf-8')
 
 class TaskQueue(AbstractTaskQueue):
     """Redis task queue"""
@@ -57,27 +59,46 @@ class TaskQueue(AbstractTaskQueue):
             host, port = urlobj.netloc, 6379
         db = int(urlobj.path.lstrip('/'))
         self.redis = redis_factory(host, int(port), db=db)
-        self.queue_key = QUEUE_PATTERN % self.name
+        self.queue_key = b'worq:queue:' + utf8(self.name)
+        self._name = utf8(self.name)
         self.initial_result_timeout = max(int(initial_result_timeout), 1)
+
+    def _task_pattern(self, task_id):
+        return b":".join([b'worq:task', self._name, task_id])
+
+    def _result_pattern(self, task_id):
+        return b":".join([b'worq:result', self._name, task_id])
+
+    def _args_pattern(self, task_id):
+        # args (for task_id) is a hash: result_id -> value
+        # each deferred and enqueued task may have an args key
+        return b":".join([b'worq:args', self._name, task_id])
+
+    def _reserve_pattern(self, result_id):
+        # reserve result_id (key) for deferred task_id (string value)
+        # each deferred and enqueued task may have a reserved key
+        return b":".join([b'worq:reserved', self._name, result_id])
 
     def ping(self):
         return self.redis.ping()
 
     def log_all_worq(self, show_expiring=False):
         """debugging helper"""
-        for key in self.redis.keys('worq:*'):
-            ttl = self.redis.ttl(key)
+        for bkey in self.redis.keys(b'worq:*'):
+            ttl = self.redis.ttl(bkey)
+            key = bkey.decode('utf-8')
             if ttl < 0 or show_expiring:
                 if key.startswith(('worq:task:', 'worq:args:')):
-                    log.debug('%s %s %s', key, ttl, self.redis.hgetall(key))
+                    log.debug('%s %s %s', key, ttl, self.redis.hgetall(bkey))
                 else:
                     log.debug('%s %s', key, ttl)
 
     def enqueue_task(self, result, message):
-        task_key = TASK_PATTERN % (self.name, result.id)
-        args_key = ARGS_PATTERN % (self.name, result.id)
-        result_key = RESULT_PATTERN % (self.name, result.id)
-        reserve_key = RESERVE_PATTERN % (self.name, result.id)
+        b_result_id = utf8(result.id)
+        task_key = self._task_pattern(b_result_id)
+        args_key = self._args_pattern(b_result_id)
+        result_key = self._result_pattern(b_result_id)
+        reserve_key = self._reserve_pattern(b_result_id)
         with self.redis.pipeline() as pipe:
             try:
                 pipe.watch(task_key)
@@ -85,21 +106,22 @@ class TaskQueue(AbstractTaskQueue):
                     return False
                 pipe.multi()
                 pipe.hmset(task_key, {
-                    'task': message,
-                    'status': const.ENQUEUED
+                    b'task': message,
+                    b'status': utf8(const.ENQUEUED)
                 })
                 pipe.delete(args_key, result_key, reserve_key)
-                pipe.lpush(self.queue_key, result.id) # left push (head)
+                pipe.lpush(self.queue_key, b_result_id) # left push (head)
                 pipe.execute()
                 return True
             except redis.WatchError:
                 return False
 
     def defer_task(self, result, message, args):
-        task_key = TASK_PATTERN % (self.name, result.id)
-        args_key = ARGS_PATTERN % (self.name, result.id)
-        result_key = RESULT_PATTERN % (self.name, result.id)
-        reserve_key = RESERVE_PATTERN % (self.name, result.id)
+        b_result_id = utf8(result.id)
+        task_key = self._task_pattern(b_result_id)
+        args_key = self._args_pattern(b_result_id)
+        result_key = self._result_pattern(b_result_id)
+        reserve_key = self._reserve_pattern(b_result_id)
         with self.redis.pipeline() as pipe:
             try:
                 pipe.watch(task_key)
@@ -107,10 +129,10 @@ class TaskQueue(AbstractTaskQueue):
                     return False
                 pipe.multi()
                 pipe.hmset(task_key, {
-                    'task': message,
-                    'status': const.PENDING,
-                    'total_args': len(args),
-                    #'args_ready': 0, # zero by default
+                    b'task': message,
+                    b'status': utf8(const.PENDING),
+                    b'total_args': len(args),
+                    #b'args_ready': 0, # zero by default
                 })
                 pipe.delete(args_key, result_key, reserve_key)
                 pipe.execute()
@@ -119,7 +141,7 @@ class TaskQueue(AbstractTaskQueue):
                 return False
 
     def undefer_task(self, task_id):
-        self.redis.lpush(self.queue_key, task_id)
+        self.redis.lpush(self.queue_key, utf8(task_id))
 
     def get(self, timeout=0):
         result_timeout = self.initial_result_timeout
@@ -130,12 +152,12 @@ class TaskQueue(AbstractTaskQueue):
             if task_id is None:
                 return None # timeout
 
-            task_key = TASK_PATTERN % (self.name, task_id)
-            args_key = ARGS_PATTERN % (self.name, task_id)
-            reserve_key = RESERVE_PATTERN % (self.name, task_id)
+            task_key = self._task_pattern(task_id)
+            args_key = self._args_pattern(task_id)
+            reserve_key = self._reserve_pattern(task_id)
             with self.redis.pipeline() as pipe:
-                pipe.hget(task_key, 'task')
-                pipe.hset(task_key, 'status', const.PROCESSING)
+                pipe.hget(task_key, b'task')
+                pipe.hset(task_key, b'status', utf8(const.PROCESSING))
                 pipe.expire(task_key, result_timeout)
                 pipe.expire(args_key, result_timeout)
                 pipe.expire(reserve_key, result_timeout)
@@ -143,7 +165,7 @@ class TaskQueue(AbstractTaskQueue):
                 cmd = pipe.execute()
                 message, removed = cmd[0], cmd[-1]
             if removed:
-                return (task_id, message)
+                return (unicode(task_id), message)
 
             if timeout != 0:
                 timeout = int(end - time.time())
@@ -154,7 +176,7 @@ class TaskQueue(AbstractTaskQueue):
         tasks = self.redis.lrange(self.queue_key, 0, -1)
         num = len(tasks)
         while tasks:
-            keys = (RESERVE_PATTERN % (self.name, t) for t in tasks)
+            keys = (self._reserve_pattern(t) for t in tasks)
             tasks = [t for t in self.redis.mget(keys) if t is not None]
             num += len(tasks)
         return num
@@ -168,10 +190,10 @@ class TaskQueue(AbstractTaskQueue):
             reserved = []
             all_keys = []
             for task_id in tasks:
-                all_keys.append(TASK_PATTERN % (self.name, task_id))
-                all_keys.append(ARGS_PATTERN % (self.name, task_id))
-                all_keys.append(RESULT_PATTERN % (self.name, task_id))
-                reserve_key = RESERVE_PATTERN % (self.name, task_id)
+                all_keys.append(self._task_pattern(task_id))
+                all_keys.append(self._args_pattern(task_id))
+                all_keys.append(self._result_pattern(task_id))
+                reserve_key = self._reserve_pattern(task_id)
                 all_keys.append(reserve_key)
                 reserved.append(reserve_key)
             with self.redis.pipeline() as pipe:
@@ -180,14 +202,15 @@ class TaskQueue(AbstractTaskQueue):
                 tasks = [v for v in pipe.execute()[0] if v is not None]
 
     def reserve_argument(self, argument_id, deferred_id):
-        reserve_key = RESERVE_PATTERN % (self.name, argument_id)
-        result_key = RESULT_PATTERN % (self.name, argument_id)
-        if self.redis.setnx(reserve_key, deferred_id):
+        b_argument_id = utf8(argument_id)
+        reserve_key = self._reserve_pattern(b_argument_id)
+        result_key = self._result_pattern(b_argument_id)
+        if self.redis.setnx(reserve_key, utf8(deferred_id)):
             value = self.redis.lpop(result_key)
             if value is not None:
                 self.redis.delete(
-                    TASK_PATTERN % (self.name, argument_id),
-                    ARGS_PATTERN % (self.name, argument_id),
+                    self._task_pattern(b_argument_id),
+                    self._args_pattern(b_argument_id),
                     result_key,
                     reserve_key,
                 )
@@ -195,30 +218,34 @@ class TaskQueue(AbstractTaskQueue):
         return (False, None)
 
     def set_argument(self, task_id, argument_id, message):
-        task_key = TASK_PATTERN % (self.name, task_id)
-        args_key = ARGS_PATTERN % (self.name, task_id)
+        b_task_id = utf8(task_id)
+        task_key = self._task_pattern(b_task_id)
+        args_key = self._args_pattern(b_task_id)
         with self.redis.pipeline() as pipe:
-            pipe.hincrby(task_key, 'args_ready', 1)
-            pipe.hget(task_key, 'total_args')
-            pipe.hset(args_key, argument_id, message)
+            pipe.hincrby(task_key, b'args_ready', 1)
+            pipe.hget(task_key, b'total_args')
+            pipe.hset(args_key, utf8(argument_id), message)
             ready, total, x = pipe.execute()
         total = int(total)
-        assert isinstance(ready, (int, long)), repr(ready)
+        assert isinstance(ready, integer), repr(ready)
         assert ready > 0, ready
         assert total > 0, total
         return ready == total
 
     def get_arguments(self, task_id):
-        args_key = ARGS_PATTERN % (self.name, task_id)
+        args_key = self._args_pattern(utf8(task_id))
         with self.redis.pipeline() as pipe:
             pipe.hgetall(args_key)
             pipe.delete(args_key)
-            return pipe.execute()[0] or {}
+            args = pipe.execute()[0]
+            if args:
+                return {unicode(k): v for k, v in args.items()}
+            return {}
 
     def set_task_timeout(self, task_id, timeout):
-        def set_timeout(task_id, args=True, timeout=max(int(timeout), 1)):
-            task_key = TASK_PATTERN % (self.name, task_id)
-            reserve_key = RESERVE_PATTERN % (self.name, task_id)
+        def set_timeout(b_task_id, args=True, timeout=max(int(timeout), 1)):
+            task_key = self._task_pattern(b_task_id)
+            reserve_key = self._reserve_pattern(b_task_id)
             with self.redis.pipeline() as pipe:
                 while True:
                     try:
@@ -227,7 +254,7 @@ class TaskQueue(AbstractTaskQueue):
                         pipe.multi()
                         pipe.expire(task_key, timeout)
                         if args:
-                            args_key = ARGS_PATTERN % (self.name, task_id)
+                            args_key = self._args_pattern(b_task_id)
                             pipe.expire(args_key, timeout)
                             pipe.expire(reserve_key, timeout)
                         pipe.execute()
@@ -237,20 +264,22 @@ class TaskQueue(AbstractTaskQueue):
         # Do not expire arguments of the first task since they have
         # already been deleted. However, all subsequent deferred tasks'
         # argument timeouts must be set.
-        deferred_id = set_timeout(task_id, False)
+        deferred_id = set_timeout(utf8(task_id), False)
         while deferred_id is not None:
             deferred_id = set_timeout(deferred_id)
 
     def get_status(self, task_id):
-        key = TASK_PATTERN % (self.name, task_id)
-        return self.redis.hget(key, 'status')
+        key = self._task_pattern(utf8(task_id))
+        value = self.redis.hget(key, b'status')
+        return value if value is None else unicode(value)
 
     def set_result(self, task_id, message, timeout):
         timeout = max(int(timeout), 1)
-        task_key = TASK_PATTERN % (self.name, task_id)
-        args_key = ARGS_PATTERN % (self.name, task_id)
-        result_key = RESULT_PATTERN % (self.name, task_id)
-        reserve_key = RESERVE_PATTERN % (self.name, task_id)
+        b_task_id = utf8(task_id)
+        task_key = self._task_pattern(b_task_id)
+        args_key = self._args_pattern(b_task_id)
+        result_key = self._result_pattern(b_task_id)
+        reserve_key = self._reserve_pattern(b_task_id)
         with self.redis.pipeline() as pipe:
             while True:
                 try:
@@ -258,12 +287,13 @@ class TaskQueue(AbstractTaskQueue):
                     deferred_id = pipe.get(reserve_key)
                     pipe.multi()
                     if deferred_id is None:
-                        pipe.hset(task_key, 'status', const.COMPLETED)
+                        pipe.hset(task_key, b'status', utf8(const.COMPLETED))
                         pipe.expire(task_key, timeout)
                         pipe.rpush(result_key, message)
                         pipe.expire(result_key, timeout)
                     else:
                         pipe.delete(task_key, result_key)
+                        deferred_id = unicode(deferred_id)
                     pipe.delete(args_key, reserve_key)
                     pipe.execute()
                     return deferred_id
@@ -271,11 +301,12 @@ class TaskQueue(AbstractTaskQueue):
                     continue
 
     def pop_result(self, task_id, timeout):
-        result_key = RESULT_PATTERN % (self.name, task_id)
+        b_task_id = utf8(task_id)
+        result_key = self._result_pattern(b_task_id)
         if timeout == 0:
             return self.redis.lpop(result_key)
 
-        task_key = TASK_PATTERN % (self.name, task_id)
+        task_key = self._task_pattern(b_task_id)
         end = None if timeout is None else time.time() + timeout
         while True:
             with self.redis.pipeline() as pipe:
@@ -301,14 +332,15 @@ class TaskQueue(AbstractTaskQueue):
             return result[1]
 
     def discard_result(self, task_id, task_expired_token):
-        while task_id is not None:
-            reserve_key = RESERVE_PATTERN % (self.name, task_id)
-            result_key = RESULT_PATTERN % (self.name, task_id)
-            args_key = ARGS_PATTERN % (self.name, task_id)
-            task_key = TASK_PATTERN % (self.name, task_id)
+        b_task_id = utf8(task_id)
+        while b_task_id is not None:
+            reserve_key = self._reserve_pattern(b_task_id)
+            result_key = self._result_pattern(b_task_id)
+            args_key = self._args_pattern(b_task_id)
+            task_key = self._task_pattern(b_task_id)
             with self.redis.pipeline() as pipe:
                 pipe.get(reserve_key) # reserved for deferred task
                 pipe.delete(task_key, args_key, reserve_key)
                 pipe.rpush(result_key, task_expired_token)
                 pipe.expire(result_key, 5)
-                task_id = pipe.execute()[0]
+                b_task_id = pipe.execute()[0]

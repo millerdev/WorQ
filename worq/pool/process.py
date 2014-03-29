@@ -447,11 +447,9 @@ def setup_exit_handler():
         signal.signal(signal.SIGTERM, on_exit)
 
 
-try:
-    import cPickle # fails in Python 3
-except ImportError:
-    def get_stdin(obj):
-        return obj.stdin.buffer
-else:
+if sys.version_info.major < 3:
     def get_stdin(obj):
         return obj.stdin
+else:
+    def get_stdin(obj):
+        return obj.stdin.buffer

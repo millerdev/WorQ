@@ -19,12 +19,9 @@ def get_redis_url():
             pass
         else:
             from worq.queue.redis import TaskQueue as RedisQueue
-            try:
-                queue = RedisQueue(redis_url)
-                if queue.ping():
-                    return redis_url
-            except Exception:
-                pass
+            queue = RedisQueue(redis_url)
+            if queue.ping():
+                return redis_url
     return None
 
 def test_redis_should_be_installed():

@@ -118,9 +118,8 @@ class Broker(object):
         message = self._queue.get_status(result.id)
         if message is None:
             return message
-        if message in STATUS_VALUES:
-            return message
-        return self.deserialize(message)
+        assert message in STATUS_VALUES, message
+        return message
 
     def next_task(self, timeout=None):
         """Get the next task from the queue.
@@ -193,7 +192,7 @@ class Broker(object):
         if task_id is None:
             def persistent_load(task_id):
                 raise UnpicklingError('message contained references to '
-                    'external objects: %s', persistent_load)
+                    'external objects: %s' % task_id)
         else:
             args = self._queue.get_arguments(task_id)
             args = {k: loads(v) for k, v in args.items()}
@@ -379,7 +378,7 @@ class AbstractTaskQueue(object):
         """Get the status of a task
 
         :param task_id: Unique task identifier string.
-        :returns: A serialized task status object or ``None``.
+        :returns: A task status value or ``None``.
         """
         raise NotImplementedError('abstract method')
 
