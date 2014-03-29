@@ -140,6 +140,9 @@ may customize this url with the ``WORQ_TEST_REDIS_URL`` environment variable).
 Change Log
 ==========
 
+v1.1.0, 2014-03-29
+  - Add support for Python 3
+
 v1.0.2, 2012-09-07
   - Allow clearing entire Queue with ``del queue[:]``.
   - Raise ``DuplicateTask`` (rather than the more generic ``TaskFailure``) when
