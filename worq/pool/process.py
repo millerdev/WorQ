@@ -50,7 +50,7 @@ except ImportError:
     from multiprocessing.connection import reduce_connection, rebuild_connection
 
 from threading import Thread
-from worq.core import DAY, DEFAULT
+from worq.const import DAY, DEFAULT
 
 log = logging.getLogger(__name__)
 
