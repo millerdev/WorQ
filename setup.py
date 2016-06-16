@@ -11,11 +11,11 @@ setup(
     license='LICENSE.txt',
     description='Python task queue',
     long_description=open('README.rst').read() \
-        .replace(':ref:', ''), # HACK replace so pypi doesn't barf on the reST
+        .replace(':ref:', ''),  # HACK replace so pypi doesn't barf on the reST
     extras_require={
         "redis": "redis >= 2.4",
     },
-    classifiers = [
+    classifiers=[
         "Programming Language :: Python",
         "Programming Language :: Python :: 2.7",
         "Programming Language :: Python :: 3",

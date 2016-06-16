@@ -39,8 +39,9 @@ except NameError:
 
 log = logging.getLogger(__name__)
 
-WAIT = 30 # default test timeout (seconds)
-DEFAULT_TIMEOUT = 10 # default utility timeout
+WAIT = 30  # default test timeout (seconds)
+DEFAULT_TIMEOUT = 10  # default utility timeout
+
 
 def with_urls(test=None, exclude=None):
     if test is not None:
@@ -55,10 +56,12 @@ def with_urls(test=None, exclude=None):
         return wrapper
     return functools.partial(with_urls, exclude=exclude)
 
+
 @contextmanager
 def thread_worker(broker, lock=None, timeout=1):
     if lock is not None:
         real_next_task = broker.next_task
+
         def next_task(*args, **kw):
             log.debug('acquiring lock before getting next task')
             lock.acquire()
@@ -79,6 +82,7 @@ def thread_worker(broker, lock=None, timeout=1):
             pool.join()
             broker.discard_pending_tasks()
 
+
 class TimeoutLock(object):
     """A lock with acquisition timeout"""
     def __init__(self, locked=False):
@@ -88,6 +92,7 @@ class TimeoutLock(object):
             if locked:
                 self.lock.acquire()
             self.locked = locked
+
     def acquire(self, timeout=DEFAULT_TIMEOUT):
         end = time.time() + timeout
         while time.time() < end:
@@ -96,10 +101,12 @@ class TimeoutLock(object):
                     self.locked = True
                     return
         raise Exception('lock timeout')
+
     def release(self):
         with self.mutex:
             self.lock.release()
             self.locked = False
+
 
 def eventually(get_value, expect, timeout=DEFAULT_TIMEOUT, poll_interval=0):
     end = time.time() + timeout
@@ -109,6 +116,7 @@ def eventually(get_value, expect, timeout=DEFAULT_TIMEOUT, poll_interval=0):
             return
         time.sleep(poll_interval)
     raise AssertionError('eventually timeout: %r != %r' % (actual, expect))
+
 
 @contextmanager
 def tempdir(*args, **kw):
@@ -126,6 +134,7 @@ def tempdir(*args, **kw):
         if delete:
             shutil.rmtree(path)
 
+
 @contextmanager
 def assert_raises(exc_class, msg=None):
     try:
@@ -137,6 +146,7 @@ def assert_raises(exc_class, msg=None):
             msg.search(str(exc))
     else:
         raise AssertionError('%s not raised' % exc_class.__name__)
+
 
 def eq_(value, other):
     assert value == other, '%r != %r' % (value, other)

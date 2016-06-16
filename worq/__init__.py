@@ -40,6 +40,7 @@ BROKER_REGISTRY = {'memory': MemoryQueue.factory}
 if RedisQueue is not None:
     BROKER_REGISTRY['redis'] = RedisQueue
 
+
 def get_broker(url, name=DEFAULT, *args, **kw):
     """Create a new broker
 
@@ -53,6 +54,7 @@ def get_broker(url, name=DEFAULT, *args, **kw):
     except KeyError:
         raise ValueError('invalid broker URL: %s' % url)
     return Broker(factory(url, name, *args, **kw))
+
 
 def get_queue(url, name=DEFAULT, target='', **options):
     """Get a queue for invoking remote tasks

@@ -20,12 +20,12 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+import os
+import sys
+import signal
 import logging
 import logging.config
-import os
-import re
-import signal
-import sys
+
 from contextlib import contextmanager
 from nose.tools import nottest
 from os.path import dirname, exists, join
@@ -63,6 +63,7 @@ def test_WorkerPool_max_worker_tasks(url):
         eq_([r[1] for r in results], [1, 2, 3, 1])
         eq_(len(set(r[0] for r in results)), 2)
 
+
 def WorkerPool_max_worker_tasks_init(url):
     broker = get_broker(url)
     calls = [0]
@@ -93,20 +94,21 @@ def test_WorkerPool_heartrate(url):
         with assert_raises(TaskExpired):
             res.value
 
+
 def WorkerPool_heartrate_init(url):
     broker = get_broker(url)
 
     @broker.expose
     def suicide_worker():
         log.warn("it's nice to work alone")
-        os.kill(os.getpid(), signal.SIGKILL) # force kill worker
+        os.kill(os.getpid(), signal.SIGKILL)  # force kill worker
 
     broker.expose(os.getpid)
 
     return broker
 
 
-@nottest # this is a very slow test, and doesn't seem that important
+@nottest  # this is a very slow test, and doesn't seem that important
 @with_urls(exclude='memory')
 def test_WorkerPool_crashed_worker(url):
     broker = get_broker(url)
@@ -124,6 +126,7 @@ def test_WorkerPool_crashed_worker(url):
         res = q.getpid()
         assert res.wait(WAIT), repr(res)
         assert res.value != pid, pid
+
 
 def WorkerPool_crashed_worker_init(url):
     broker = get_broker(url)
@@ -154,11 +157,12 @@ def test_WorkerPool_sigterm(url):
 
             eventually(reader(tmp, 'func.started'), '')
 
-            proc.terminate() # signal pool shutdown
-            touch(join(tmp, 'func.unlock')) # allow func to proceed
+            proc.terminate()  # signal pool shutdown
+            touch(join(tmp, 'func.unlock'))  # allow func to proceed
 
             eventually(reader(tmp, 'func.out'), 'text')
             eventually(verify_shutdown(proc), True, timeout=WAIT)
+
 
 def WorkerPool_sigterm_init(url, tmp, logpath):
     process_config(logpath, 'Worker-%s' % os.getpid())
@@ -194,15 +198,16 @@ def test_WorkerPool_worker_shutdown_on_parent_die(url):
             res = get_queue(url).getpid()
             assert res.wait(WAIT), repr(res)
 
-            os.kill(proc.pid, signal.SIGKILL) # force kill pool master
+            os.kill(proc.pid, signal.SIGKILL)  # force kill pool master
             eventually(proc.is_alive, False, timeout=WAIT)
 
         try:
             eventually(pid_running(res.value), False,
                 timeout=WAIT, poll_interval=0.1)
         except Exception:
-            os.kill(res.value, signal.SIGTERM) # clean up
+            os.kill(res.value, signal.SIGTERM)  # clean up
             raise
+
 
 def WorkerPool_worker_shutdown_on_parent_die_init(url, tmp, logpath):
     process_config(logpath, 'Worker-%s' % os.getpid())
@@ -217,6 +222,7 @@ def WorkerPool_worker_shutdown_on_parent_die_init(url, tmp, logpath):
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # pool test helpers
+
 
 def process_config(logpath, procname):
     import worq.pool.process as proc
@@ -245,22 +251,27 @@ def process_config(logpath, procname):
     })
     log.info('WORKER_POLL_INTERVAL = %s', proc.WORKER_POLL_INTERVAL)
 
+
 def touch(path, data=''):
     with open(path, 'w') as f:
         f.write(data)
 
+
 def reader(*path):
     path = join(*path)
+
     def read():
         if exists(path):
             with open(path) as f:
                 return f.read()
     return read
 
+
 def verify_shutdown(proc):
     def verify():
         return not proc.is_alive()
     return verify
+
 
 def pid_running(pid):
     def is_process_running(pid=pid):
@@ -270,6 +281,7 @@ def pid_running(pid):
             return False
         return True
     return is_process_running
+
 
 @contextmanager
 def printlog(logpath, heading='pool logging output:'):
@@ -281,6 +293,7 @@ def printlog(logpath, heading='pool logging output:'):
             with open(logpath) as f:
                 sys.stdout.write(f.read())
 
+
 def _logging_init(url, _logpath, _init, *args, **kw):
     if exists(dirname(_logpath)):
         process_config(_logpath, 'Worker-%s' % os.getpid())
@@ -291,8 +304,10 @@ def _logging_init(url, _logpath, _init, *args, **kw):
     broker.expose(noop)
     return broker
 
+
 def noop():
     pass
+
 
 def worker_pool(url, init_func, init_args, workers=1):
     process_config(init_args[-1], 'Pool-%s' % os.getpid())
@@ -300,6 +315,7 @@ def worker_pool(url, init_func, init_args, workers=1):
     with discard_tasks(broker):
         pool = WorkerPool(broker, init_func, init_args, workers=workers)
         pool.start(timeout=1)
+
 
 @contextmanager
 def start_pool(pool, timeout=1):
@@ -318,12 +334,14 @@ def start_pool(pool, timeout=1):
                     pool.broker.queue().noop()
                 pool.stop()
 
+
 @contextmanager
 def discard_tasks(broker):
     try:
         yield
     finally:
         broker.discard_pending_tasks()
+
 
 @contextmanager
 def force_kill_on_exit(proc):

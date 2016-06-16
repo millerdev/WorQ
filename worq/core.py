@@ -21,7 +21,6 @@
 # SOFTWARE.
 
 import logging
-from collections import defaultdict
 try:
     from cPickle import (Pickler, PicklingError, Unpickler, UnpicklingError, loads,
         HIGHEST_PROTOCOL)
@@ -30,16 +29,15 @@ except ImportError:
     from pickle import (Pickler, PicklingError, Unpickler, UnpicklingError, loads,
         HIGHEST_PROTOCOL)
     from io import BytesIO as StringIO
-from uuid import uuid4
-from weakref import ref as weakref
 
-from worq.const import DEFAULT, HOUR, MINUTE, DAY, STATUS_VALUES, TASK_EXPIRED
-from worq.task import (Queue, TaskSpace, FunctionTask, Deferred,
+from worq.const import DEFAULT, STATUS_VALUES, TASK_EXPIRED
+from worq.task import (Queue, TaskSpace, Deferred,
     TaskFailure, TaskExpired, DuplicateTask)
 
 __all__ = ['Broker', 'AbstractTaskQueue']
 
 log = logging.getLogger(__name__)
+
 
 class Broker(object):
     """A Broker controlls all interaction with the queue backend"""
@@ -138,7 +136,7 @@ class Broker(object):
             log.error('cannot deserialize task [%s:%s]',
                 self.name, task_id, exc_info=True)
             return None
-        #log.debug('next %s [%s:%s]', task.name, self.name, task_id)
+        # log.debug('next %s [%s:%s]', task.name, self.name, task_id)
         return task
 
     def invoke(self, task, **kw):
@@ -163,6 +161,7 @@ class Broker(object):
         """
         if deferred:
             args = {}
+
             def persistent_id(obj):
                 if isinstance(obj, Deferred):
                     args[obj.id] = obj
@@ -170,6 +169,7 @@ class Broker(object):
                 return None
         else:
             args = None
+
             def persistent_id(obj):
                 if isinstance(obj, Deferred):
                     raise PicklingError('%s cannot be serialized' % obj)
@@ -196,6 +196,7 @@ class Broker(object):
         else:
             args = self._queue.get_arguments(task_id)
             args = {k: loads(v) for k, v in args.items()}
+
             def persistent_load(arg_id):
                 value = args[arg_id]
                 if isinstance(value, TaskFailure):
