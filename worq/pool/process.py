@@ -39,13 +39,16 @@ import subprocess
 from functools import partial
 from multiprocessing import Pipe, cpu_count, current_process
 from multiprocessing.process import AuthenticationString
-from multiprocessing.reduction import reduce_connection, rebuild_connection
 try:
     from cPickle import dump, load, HIGHEST_PROTOCOL, PicklingError
     from Queue import Empty, Queue as ThreadQueue
+    from multiprocessing.reduction import reduce_connection, rebuild_connection
 except ImportError:
+    # python 3 imports
     from pickle import dump, load, HIGHEST_PROTOCOL, PicklingError
     from queue import Empty, Queue as ThreadQueue
+    from multiprocessing.connection import reduce_connection, rebuild_connection
+
 from threading import Thread
 from worq.core import DAY, DEFAULT
 
