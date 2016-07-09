@@ -22,7 +22,7 @@
 
 import worq.const as const
 from worq import get_broker, get_queue
-from worq.task import DuplicateTask, Task, TaskExpired, TaskFailure
+from worq.task import DuplicateTask, Task, TaskExpired
 from worq.tests.util import (assert_raises, eq_, eventually, thread_worker,
     with_urls, TimeoutLock, WAIT)
 
@@ -30,6 +30,7 @@ from worq.tests.util import (assert_raises, eq_, eventually, thread_worker,
 @with_urls
 def test_Broker_task_failed(url):
     lock = TimeoutLock(locked=True)
+
     def func():
         lock.acquire()
     broker = get_broker(url)
@@ -50,13 +51,14 @@ def test_Broker_task_failed(url):
 def test_Broker_duplicate_task_id_string(url):
     Broker_duplicate_task_id(url, 'int')
 
+
 @with_urls
 def test_Broker_duplicate_task_id_function(url):
     Broker_duplicate_task_id(url, lambda arg: type(arg).__name__)
 
+
 def Broker_duplicate_task_id(url, identifier):
     lock = TimeoutLock(locked=True)
-    state = []
 
     def func(arg):
         lock.acquire()
@@ -70,13 +72,13 @@ def Broker_duplicate_task_id(url, identifier):
         task = Task(q.func, id=identifier)
         res = task(1)
 
-        eventually((lambda:res.status), const.ENQUEUED)
+        eventually((lambda: res.status), const.ENQUEUED)
         msg = 'func [default:int] cannot enqueue task with duplicate id'
         with assert_raises(DuplicateTask, msg):
             task(2)
 
         lock.release()
-        eventually((lambda:res.status), const.PROCESSING)
+        eventually((lambda: res.status), const.PROCESSING)
         msg = 'func [default:int] cannot enqueue task with duplicate id'
         with assert_raises(DuplicateTask, msg):
             task(3)
@@ -86,9 +88,9 @@ def Broker_duplicate_task_id(url, identifier):
         eq_(res.value, 1)
 
         res = task(4)
-        eventually((lambda:res.status), const.ENQUEUED)
+        eventually((lambda: res.status), const.ENQUEUED)
         lock.release()
-        eventually((lambda:res.status), const.PROCESSING)
+        eventually((lambda: res.status), const.PROCESSING)
         lock.release()
         assert res.wait(timeout=WAIT), repr(res)
         eq_(res.value, 4)

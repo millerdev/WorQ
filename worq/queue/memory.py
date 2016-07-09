@@ -36,6 +36,7 @@ log = logging.getLogger(__name__)
 
 _REFS = WeakValueDictionary()
 
+
 class TaskQueue(AbstractTaskQueue):
     """Simple in-memory task queue implementation"""
 

@@ -39,16 +39,18 @@ import subprocess
 from functools import partial
 from multiprocessing import Pipe, cpu_count, current_process
 from multiprocessing.process import AuthenticationString
-from multiprocessing.reduction import reduce_connection, rebuild_connection
 try:
     from cPickle import dump, load, HIGHEST_PROTOCOL, PicklingError
     from Queue import Empty, Queue as ThreadQueue
+    from multiprocessing.reduction import reduce_connection, rebuild_connection
 except ImportError:
+    # python 3 imports
     from pickle import dump, load, HIGHEST_PROTOCOL, PicklingError
     from queue import Empty, Queue as ThreadQueue
+    from multiprocessing.connection import reduce_connection, rebuild_connection
+
 from threading import Thread
-from worq import get_broker
-from worq.core import DAY, DEFAULT
+from worq.const import DAY, DEFAULT
 
 log = logging.getLogger(__name__)
 
@@ -56,7 +58,9 @@ STOP = 'STOP'
 PYTHON_EXE = sys.executable
 WORKER_POLL_INTERVAL = 30
 
-class Error(Exception): pass
+
+class Error(Exception):
+    pass
 
 
 class WorkerPool(object):
@@ -85,8 +89,7 @@ class WorkerPool(object):
             init_kwargs=None,
             workers=None,
             max_worker_tasks=None,
-            name=None,
-        ):
+            name=None):
         self.broker = broker
         self.init_func = init_func
         self.init_args = (broker.url,) + init_args
@@ -175,7 +178,7 @@ class WorkerPool(object):
         log.info('shutting down %s...', str(self))
         while True:
             try:
-                item = self._worker_queue.get_nowait()
+                self._worker_queue.get_nowait()
             except Empty:
                 break
         self._worker_queue.put(STOP)
@@ -260,7 +263,7 @@ class WorkerProxy(object):
             if proc is None or not proc.is_alive():
                 # start new worker process
                 child, parent = Pipe()
-                cx = _reduce_connection(parent) # HACK reduce for pickle
+                cx = _reduce_connection(parent)  # HACK reduce for pickle
                 proc = run_in_subprocess(worker_process, pid, cx, *args)
                 self.pid = proc.pid
 
@@ -302,7 +305,7 @@ def worker_process(parent_pid, reduced_cn,
     broker = init(*init_args, **init_kw)
     log.info('Worker-%s started', os.getpid())
     task_count = 1
-    parent = reduced_cn[0](*reduced_cn[1]) # HACK un-reduce connection
+    parent = reduced_cn[0](*reduced_cn[1])  # HACK un-reduce connection
 
     while True:
         while not parent.poll(WORKER_POLL_INTERVAL):
@@ -321,12 +324,12 @@ def worker_process(parent_pid, reduced_cn,
         result = broker.invoke(task, return_result=True)
 
         if max_worker_tasks is None:
-            parent.send((result, None)) # send result
+            parent.send((result, None))  # send result
         elif task_count < max_worker_tasks:
             task_count += 1
-            parent.send((result, None)) # send result
+            parent.send((result, None))  # send result
         else:
-            parent.send((result, STOP)) # send result, worker stopping
+            parent.send((result, STOP))  # send result, worker stopping
             break
 
     log.info('Worker-%s stopped', os.getpid())
@@ -395,6 +398,7 @@ def _reduce_connection(conn):
     assert len(obj) == 2, obj
     args = (bytes(current_process().authkey),) + obj[1]
     return (_rebuild_connection, args)
+
 
 def _rebuild_connection(authkey, *args):
     current_process().authkey = AuthenticationString(authkey)

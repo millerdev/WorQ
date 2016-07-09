@@ -20,7 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from worq import get_broker, get_queue, Task, TaskFailure, TaskSpace
+from worq import get_broker, get_queue, Task, TaskFailure
 from worq.tests.util import (assert_raises, eq_, eventually, thread_worker,
     with_urls, WAIT, TimeoutLock)
 
@@ -28,6 +28,7 @@ from worq.tests.util import (assert_raises, eq_, eventually, thread_worker,
 @with_urls
 def test_Queue_len(url):
     lock = TimeoutLock(locked=True)
+
     def func(arg=None):
         pass
     broker = get_broker(url)
@@ -43,14 +44,14 @@ def test_Queue_len(url):
         r2 = q.func(r1)
         eq_(len(q), 3)
 
-        eventually((lambda:lock.locked), True)
+        eventually((lambda: lock.locked), True)
         lock.release()
         assert r0.wait(timeout=WAIT), repr(r0)
         eq_(len(q), 2)
 
-        eventually((lambda:lock.locked), True)
+        eventually((lambda: lock.locked), True)
         lock.release()
-        eventually((lambda:lock.locked), True)
+        eventually((lambda: lock.locked), True)
         lock.release()
         assert r2.wait(timeout=WAIT), repr(r2)
         eq_(len(q), 0)

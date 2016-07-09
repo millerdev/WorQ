@@ -21,10 +21,9 @@
 # SOFTWARE.
 
 import logging
-import time
 from uuid import uuid4
 
-from worq.const import HOUR, DEFAULT
+from worq.const import HOUR
 
 log = logging.getLogger(__name__)
 try:
@@ -113,6 +112,7 @@ def option_descriptors(cls):
         setattr(cls, name, property(fget))
     return cls
 
+
 @option_descriptors
 class Task(object):
     """Remote task handle
@@ -158,8 +158,7 @@ class Task(object):
                 on_error=FAIL,
                 ignore_result=False,
                 result_timeout=HOUR,
-                heartrate=30,
-            ):
+                heartrate=30):
         self.queue = queue
         self.name = queue._Queue__target
         self.options = options = {}
@@ -336,7 +335,7 @@ class Deferred(object):
         """Return True if the result has arrived, otherwise False."""
         return self.wait(0)
 
-    __nonzero__ = __bool__ # Python 2 compat
+    __nonzero__ = __bool__  # Python 2 compat
 
     def __repr__(self):
         status = self.status
@@ -416,6 +415,9 @@ class TaskFailure(Exception):
         return not self.__eq__(other)
 
 
-class TaskExpired(TaskFailure): pass
+class TaskExpired(TaskFailure):
+    pass
 
-class DuplicateTask(TaskFailure): pass
+
+class DuplicateTask(TaskFailure):
+    pass

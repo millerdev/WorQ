@@ -37,14 +37,18 @@ log = logging.getLogger(__name__)
 
 if sys.version_info.major < 3:
     integer = (int, long)
+
     def utf8(value):
         return value
 else:
     integer = int
+
     def utf8(value):
         return value.encode('utf-8')
+
     def unicode(value):
         return value.decode('utf-8')
+
 
 class TaskQueue(AbstractTaskQueue):
     """Redis task queue"""
@@ -110,7 +114,7 @@ class TaskQueue(AbstractTaskQueue):
                     b'status': utf8(const.ENQUEUED)
                 })
                 pipe.delete(args_key, result_key, reserve_key)
-                pipe.lpush(self.queue_key, b_result_id) # left push (head)
+                pipe.lpush(self.queue_key, b_result_id)  # left push (head)
                 pipe.execute()
                 return True
             except redis.WatchError:
@@ -132,7 +136,7 @@ class TaskQueue(AbstractTaskQueue):
                     b'task': message,
                     b'status': utf8(const.PENDING),
                     b'total_args': len(args),
-                    #b'args_ready': 0, # zero by default
+                    # b'args_ready': 0, # zero by default
                 })
                 pipe.delete(args_key, result_key, reserve_key)
                 pipe.execute()
@@ -150,7 +154,7 @@ class TaskQueue(AbstractTaskQueue):
         while True:
             task_id = self.redis.brpoplpush(queue, queue, timeout=timeout)
             if task_id is None:
-                return None # timeout
+                return None  # timeout
 
             task_key = self._task_pattern(task_id)
             args_key = self._args_pattern(task_id)
@@ -161,7 +165,7 @@ class TaskQueue(AbstractTaskQueue):
                 pipe.expire(task_key, result_timeout)
                 pipe.expire(args_key, result_timeout)
                 pipe.expire(reserve_key, result_timeout)
-                pipe.lrem(queue, 1, task_id) # traverse head to tail
+                pipe.lrem(queue, 1, task_id)  # traverse head to tail
                 cmd = pipe.execute()
                 message, removed = cmd[0], cmd[-1]
             if removed:
@@ -315,7 +319,6 @@ class TaskQueue(AbstractTaskQueue):
                 timeout, exists = pipe.execute()
                 if end:
                     timeout = min(timeout, int(end - time.time()))
-            t = timeout
             if timeout <= 0:
                 if not exists:
                     # task has expired (heartbeat stopped)
@@ -326,7 +329,7 @@ class TaskQueue(AbstractTaskQueue):
             result = self.redis.blpop([result_key], timeout=timeout)
             if result is None:
                 if end and time.time() > end:
-                    return None # timeout
+                    return None  # timeout
                 continue
             self.redis.delete(task_key)
             return result[1]
@@ -339,7 +342,7 @@ class TaskQueue(AbstractTaskQueue):
             args_key = self._args_pattern(b_task_id)
             task_key = self._task_pattern(b_task_id)
             with self.redis.pipeline() as pipe:
-                pipe.get(reserve_key) # reserved for deferred task
+                pipe.get(reserve_key)  # reserved for deferred task
                 pipe.delete(task_key, args_key, reserve_key)
                 pipe.rpush(result_key, task_expired_token)
                 pipe.expire(result_key, 5)

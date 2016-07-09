@@ -22,7 +22,6 @@
 
 import logging
 from threading import Event, Thread
-from uuid import uuid4
 from worq.task import TaskSpace
 
 log = logging.getLogger(__name__)
@@ -45,7 +44,7 @@ class WorkerPool(object):
         self.threads = []
         self.stop_event = Event()
         ts = TaskSpace(__name__)
-        ts.task(lambda:None, 'noop')
+        ts.task(lambda: None, 'noop')
         broker.expose(ts, replace=True)
 
     def start(self, timeout=1):
