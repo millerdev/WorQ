@@ -170,8 +170,9 @@ may customize this url with the ``WORQ_TEST_REDIS_URL`` environment variable).
 Change Log
 ==========
 
-v1.1.1, ??
+v1.1.1, 2018-03-20
   - Add example using memory queue
+  - Fix python 3 compatibility
 
 v1.1.0, 2014-03-29
   - Add support for Python 3
